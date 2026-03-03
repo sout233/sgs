@@ -1,0 +1,32 @@
+// Ignore whitespace and line comments
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" | "\u{00A0}" }
+COMMENT    = _{ "//" ~ (!("\n" | "\r") ~ ANY)* }
+
+// End of input matches completion
+program = { SOI ~ stmt* ~ EOI }
+
+ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+
+stmt = {
+    annotation |
+    mount_stmt |
+    param_stmt |
+    require_stmt |
+    fn_stmt
+}
+
+annotation   = { "@" ~ ident ~ ident ~ ";"? }
+mount_stmt   = { "mount" ~ ident ~ ";"? }
+param_stmt   = { "param" ~ ident ~ ":" ~ ident ~ ";"? }
+require_stmt = { "require" ~ ("mut")? ~ ident ~ ";"? }
+
+fn_stmt = { "fn" ~ ident ~ "()" ~ ("->" ~ ident)? ~ block }
+block   = { "{" ~ block_stmt* ~ "}" }
+
+block_stmt  = { assign_stmt }
+assign_stmt = { path ~ assign_op ~ expr ~ ";"? }
+assign_op   = { "+=" | "-=" | "*=" | "/=" | "=" }
+
+path = { ident ~ ("." ~ ident)* }
+expr = { number | path }
