@@ -1,3 +1,4 @@
+// src/ast.rs
 #[derive(Debug, PartialEq)]
 pub enum SgsNode {
     EntityDef(EntityDef),

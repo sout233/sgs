@@ -1,8 +1,7 @@
-// Ignore whitespace and line comments
+// sgs.pest
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" | "\u{00A0}" }
 COMMENT    = _{ "//" ~ (!("\n" | "\r") ~ ANY)* }
 
-// End of input matches completion
 program = { SOI ~ stmt* ~ EOI }
 
 ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
@@ -16,17 +15,22 @@ stmt = {
     fn_stmt
 }
 
-annotation   = { "@" ~ ident ~ ident ~ ";"? }
-mount_stmt   = { "mount" ~ ident ~ ";"? }
-param_stmt   = { "param" ~ ident ~ ":" ~ ident ~ ";"? }
-require_stmt = { "require" ~ ("mut")? ~ ident ~ ";"? }
+// 强制所有的顶层语句和赋值语句带分号
+annotation   = { "@" ~ ident ~ ident ~ ";" }
+mount_stmt   = { "mount" ~ ident ~ ";" }
+param_stmt   = { "param" ~ ident ~ ":" ~ ident ~ ";" }
+require_stmt = { "require" ~ is_mut? ~ ident ~ ";" }
 
-fn_stmt = { "fn" ~ ident ~ "()" ~ ("->" ~ ident)? ~ block }
-block   = { "{" ~ block_stmt* ~ "}" }
+// 将关键字提取为单独的 rule，方便 Rust 代码中精确匹配
+is_mut = { "mut" }
 
-block_stmt  = { assign_stmt }
-assign_stmt = { path ~ assign_op ~ expr ~ ";"? }
-assign_op   = { "+=" | "-=" | "*=" | "/=" | "=" }
+fn_stmt = { "fn" ~ ident ~ "()" ~ return_ty? ~ block }
+return_ty = { "->" ~ ident }
+
+block      = { "{" ~ block_stmt* ~ "}" }
+block_stmt = { assign_stmt }
+assign_stmt = { path ~ assign_op ~ expr ~ ";" }
+assign_op  = { "+=" | "-=" | "*=" | "/=" | "=" }
 
 path = { ident ~ ("." ~ ident)* }
 expr = { number | path }

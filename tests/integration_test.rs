@@ -1,11 +1,12 @@
+// tests/integration_test.rs
 use sgs::ast::*;
 use sgs::parse_program;
 
 #[test]
 fn test_parse_player_entity() {
     let script = r#"
-        @type Entity
-        @name Player
+        @type Entity;
+        @name Player;
 
         mount Transition;
         mount Health;
@@ -27,10 +28,10 @@ fn test_parse_player_entity() {
 fn test_parse_transition_component() {
     let script = r#"
         // transition.sgs
-        @type Component
-        @name Transition
+        @type Component;
+        @name Transition;
 
-        param position : Vector2
+        param position : Vector2;
     "#;
 
     let ast = parse_program(script).unwrap();
@@ -50,8 +51,8 @@ fn test_parse_transition_component() {
 fn test_parse_movement_system() {
     let script = r#"
         // movement.sgs
-        @type System
-        @name Movement
+        @type System;
+        @name Movement;
 
         require mut Transition;
 

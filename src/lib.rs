@@ -21,16 +21,12 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
     let mut system_reqs = Vec::new();
     let mut system_fns = Vec::new();
 
-    // Fix: Use a macro instead of a closure.
-    // A closure holds a mutable borrow for its entire lifetime.
-    // A macro expands at the call site, avoiding borrow conflict.
     macro_rules! finalize_current_node {
         () => {
             if !current_type.is_empty() {
                 match current_type.as_str() {
                     "Entity" => ast_nodes.push(SgsNode::EntityDef(EntityDef {
                         name: current_name.clone(),
-                        // std::mem::take leaves an empty Vec in place of the old one
                         components: std::mem::take(&mut entity_components),
                     })),
                     "Component" => ast_nodes.push(SgsNode::ComponentDef(ComponentDef {
@@ -59,7 +55,6 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
                         let value = inner.next().unwrap().as_str();
 
                         if key == "type" {
-                            // Close out the previous node before starting a new one
                             finalize_current_node!();
                             current_type = value.to_string();
                             current_name = String::new();
@@ -82,12 +77,14 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
                     }
                     Rule::require_stmt => {
                         let mut inner = stmt_inner.into_inner();
-                        let first = inner.next().unwrap().as_str();
+                        let first_pair = inner.next().unwrap();
 
-                        let (is_mut, name) = if first == "mut" {
+                        let (is_mut, name) = if first_pair.as_rule() == Rule::is_mut {
+                            // 如果匹配到了 mut，下一个才是 ident
                             (true, inner.next().unwrap().as_str().to_string())
                         } else {
-                            (false, first.to_string())
+                            // 否则第一个直接就是 ident
+                            (false, first_pair.as_str().to_string())
                         };
 
                         system_reqs.push(RequiredComponent { is_mut, name });
@@ -96,10 +93,17 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
                         let mut inner = stmt_inner.into_inner();
                         let fn_name = inner.next().unwrap().as_str();
 
-                        let block = inner.last().unwrap();
-                        let mut assigns = Vec::new();
+                        let mut return_ty = None;
+                        let mut block_pair = inner.next().unwrap();
 
-                        for block_stmt in block.into_inner() {
+                        // 检查是否有返回类型规则
+                        if block_pair.as_rule() == Rule::return_ty {
+                            return_ty = Some(block_pair.into_inner().next().unwrap().as_str().to_string());
+                            block_pair = inner.next().unwrap(); // 移动到 block
+                        }
+
+                        let mut assigns = Vec::new();
+                        for block_stmt in block_pair.into_inner() {
                             let assign = block_stmt.into_inner().next().unwrap();
                             let mut assign_parts = assign.into_inner();
 
@@ -129,7 +133,7 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
 
                         system_fns.push(FunctionDef {
                             name: fn_name.to_string(),
-                            return_ty: None,
+                            return_ty,
                             statements: assigns,
                         });
                     }
@@ -137,7 +141,6 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
                 }
             }
             Rule::EOI => {
-                // Finalize the very last node in the file
                 finalize_current_node!();
             }
             _ => unreachable!(),
