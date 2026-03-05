@@ -1,16 +1,18 @@
-// sgs.pest
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" | "\u{00A0}" }
 COMMENT    = _{ "//" ~ (!("\n" | "\r") ~ ANY)* }
 
 program = { SOI ~ stmt* ~ EOI }
 
-ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
-number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-string_lit = ${ "\"" ~ inner_string ~ "\"" }
+ident        = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+number       = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+string_lit   = ${ "\"" ~ inner_string ~ "\"" }
 inner_string = @{ (!"\"" ~ ANY)* }
 
-// 复杂的类型名称（例如 func(string) -> void）
-type_name = { ("func" ~ "(" ~ (type_name ~ ("," ~ type_name)*)? ~ ")" ~ "->" ~ type_name) | ident }
+// type
+type_name = {
+    ("func" ~ "(" ~ (type_name ~ ("," ~ type_name)*)? ~ ")" ~ "->" ~ type_name)
+  | ident
+}
 
 stmt = { annotation | mount_stmt | param_stmt | require_stmt | fn_stmt }
 
@@ -38,7 +40,7 @@ assign_op   = { "+=" | "-=" | "*=" | "/=" | "=" }
 
 path = { ident ~ ("." ~ ident)* }
 
-// 表达式规则（注意优先级，call 和 closure 在前）
-expr = { closure | call | string_lit | number | path }
+// 表达式
+expr    = { closure | call | string_lit | number | path }
 closure = { "|" ~ fn_params ~ "|" ~ block }
-call = { path ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")" }
+call    = { path ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")" }

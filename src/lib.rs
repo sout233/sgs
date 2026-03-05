@@ -1,4 +1,10 @@
-// src/lib.rs
+//! # Sout's Game Script (SGS)
+//!
+//! SGS is a domain-specific language (DSL) designed for SOUT ENGINE.
+//! It provides a concise and expressive syntax for defining entities, components,
+//! and systems (ECS) within a game engine.
+//!
+
 pub mod ast;
 
 use ast::*;
