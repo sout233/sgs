@@ -76,15 +76,93 @@ fn test_parse_movement_system() {
         assert_eq!(func.name, "_process");
 
         assert_eq!(func.statements.len(), 1);
-        assert_eq!(func.statements[0].op, "+=");
+        assert_eq!(
+            func.statements[0],
+            Stmt::Assign(AssignStmt {
+                target_path: vec!["Transition", "position", "x"]
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                op: "+=".into(),
+                value: Expr::Number(1.0)
+            })
+        );
+    } else {
+        panic!("Expected SystemDef");
+    }
+}
 
-        let path = &func.statements[0].target_path;
-        assert_eq!(path, &vec!["Transition", "position", "x"]);
+#[test]
+fn test_fn() {
+    let script = r#"
+        @type System;
+        @name Logic;
 
-        if let Expr::Number(val) = func.statements[0].value {
-            assert_eq!(val, 1.0);
+        // fn.sgs
+        fn _process() -> void {
+            let lambda_print = |msg: string| {
+                print(msg);
+            };
+            lambda_print("hello world");
+            idk(lambda_print);
+        }
+
+        fn idk(some_func: func(string) -> void) {
+            some_func("hello world from idk");
+            some_func("hello world from idk again");
+        }
+    "#;
+
+    let ast = parse_program(script).unwrap();
+    assert_eq!(ast.len(), 1);
+
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        assert_eq!(sys.functions.len(), 2);
+
+        // _process fn
+        let func1 = &sys.functions[0];
+        assert_eq!(func1.name, "_process");
+        assert_eq!(func1.params.len(), 0);
+        assert_eq!(func1.return_ty.as_deref(), Some("void"));
+        assert_eq!(func1.statements.len(), 3);
+
+        // let 闭包
+        if let Stmt::Let { name, value } = &func1.statements[0] {
+            assert_eq!(name, "lambda_print");
+            if let Expr::Closure { params, body } = value {
+                assert_eq!(params.len(), 1);
+                assert_eq!(params[0].name, "msg");
+                assert_eq!(params[0].ty, "string");
+                assert_eq!(body.len(), 1);
+            } else {
+                panic!("Expected Closure in Let statement");
+            }
         } else {
-            panic!("Expected Number expr");
+            panic!("Expected Let statement");
+        }
+
+        // lambda_print("hello world");
+        if let Stmt::Expr(Expr::Call { target, args }) = &func1.statements[1] {
+            assert_eq!(**target, Expr::Path(vec!["lambda_print".to_string()]));
+            assert_eq!(args.len(), 1);
+            assert_eq!(args[0], Expr::StringLit("hello world".to_string()));
+        } else {
+            panic!("Expected Call expression statement");
+        }
+
+        // 验证 idk fn
+        let func2 = &sys.functions[1];
+        assert_eq!(func2.name, "idk");
+        assert_eq!(func2.params.len(), 1);
+        assert_eq!(func2.params[0].name, "some_func");
+        assert_eq!(func2.params[0].ty, "func(string)->void"); // 空格没了
+        assert_eq!(func2.statements.len(), 2);
+
+        // some_func("hello world from idk");
+        if let Stmt::Expr(Expr::Call { target, args }) = &func2.statements[0] {
+            assert_eq!(**target, Expr::Path(vec!["some_func".to_string()]));
+            assert_eq!(args.len(), 1);
+            assert_eq!(args[0], Expr::StringLit("hello world from idk".to_string()));
         }
     } else {
         panic!("Expected SystemDef");

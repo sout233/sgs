@@ -40,8 +40,22 @@ pub struct RequiredComponent {
 #[derive(Debug, PartialEq)]
 pub struct FunctionDef {
     pub name: String,
+    pub params: Vec<FnParam>,
     pub return_ty: Option<String>,
-    pub statements: Vec<AssignStmt>,
+    pub statements: Vec<Stmt>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct FnParam {
+    pub name: String,
+    pub ty: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Stmt {
+    Let { name: String, value: Expr },
+    Assign(AssignStmt),
+    Expr(Expr),
 }
 
 #[derive(Debug, PartialEq)]
@@ -54,6 +68,14 @@ pub struct AssignStmt {
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     Number(f64),
-    String(String),
+    StringLit(String),
     Path(Vec<String>),
+    Closure {
+        params: Vec<FnParam>,
+        body: Vec<Stmt>,
+    },
+    Call {
+        target: Box<Expr>,
+        args: Vec<Expr>,
+    },
 }

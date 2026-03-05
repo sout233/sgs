@@ -79,11 +79,10 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
                         let mut inner = stmt_inner.into_inner();
                         let first_pair = inner.next().unwrap();
 
+                        // 第一个是mut那便下一个是ident
                         let (is_mut, name) = if first_pair.as_rule() == Rule::is_mut {
-                            // 如果匹配到了 mut，下一个才是 ident
                             (true, inner.next().unwrap().as_str().to_string())
                         } else {
-                            // 否则第一个直接就是 ident
                             (false, first_pair.as_str().to_string())
                         };
 
@@ -93,48 +92,24 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
                         let mut inner = stmt_inner.into_inner();
                         let fn_name = inner.next().unwrap().as_str();
 
+                        let params_pair = inner.next().unwrap();
+                        let params = parse_fn_params(params_pair);
+
                         let mut return_ty = None;
                         let mut block_pair = inner.next().unwrap();
 
-                        // 检查是否有返回类型规则
                         if block_pair.as_rule() == Rule::return_ty {
-                            return_ty = Some(block_pair.into_inner().next().unwrap().as_str().to_string());
-                            block_pair = inner.next().unwrap(); // 移动到 block
+                            return_ty = Some(block_pair.as_str().replace(" ", "").replace("->", ""));
+                            block_pair = inner.next().unwrap();
                         }
 
-                        let mut assigns = Vec::new();
-                        for block_stmt in block_pair.into_inner() {
-                            let assign = block_stmt.into_inner().next().unwrap();
-                            let mut assign_parts = assign.into_inner();
-
-                            let path_pair = assign_parts.next().unwrap();
-                            let target_path = path_pair
-                                .into_inner()
-                                .map(|i| i.as_str().to_string())
-                                .collect();
-
-                            let op = assign_parts.next().unwrap().as_str().to_string();
-
-                            let expr_pair = assign_parts.next().unwrap().into_inner().next().unwrap();
-                            let expr = match expr_pair.as_rule() {
-                                Rule::number => Expr::Number(expr_pair.as_str().parse().unwrap()),
-                                Rule::path => Expr::Path(
-                                    expr_pair.into_inner().map(|i| i.as_str().to_string()).collect(),
-                                ),
-                                _ => unreachable!(),
-                            };
-
-                            assigns.push(AssignStmt {
-                                target_path,
-                                op,
-                                value: expr,
-                            });
-                        }
+                        let statements = block_pair.into_inner().map(parse_stmt).collect();
 
                         system_fns.push(FunctionDef {
                             name: fn_name.to_string(),
+                            params,
                             return_ty,
-                            statements: assigns,
+                            statements,
                         });
                     }
                     _ => {}
@@ -148,4 +123,65 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
     }
 
     Ok(ast_nodes)
+}
+
+fn parse_fn_params(pair: pest::iterators::Pair<Rule>) -> Vec<FnParam> {
+    pair.into_inner().map(|p| {
+        let mut inner = p.into_inner();
+        FnParam {
+            name: inner.next().unwrap().as_str().to_string(),
+            ty: inner.next().unwrap().as_str().replace(" ", ""),
+        }
+    }).collect()
+}
+
+fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Stmt {
+    let inner = pair.into_inner().next().unwrap();
+    match inner.as_rule() {
+        Rule::let_stmt => {
+            let mut parts = inner.into_inner();
+            let name = parts.next().unwrap().as_str().to_string();
+            let expr = parse_expr(parts.next().unwrap());
+            Stmt::Let { name, value: expr }
+        }
+        Rule::assign_stmt => {
+            let mut parts = inner.into_inner();
+            let target_path = parts.next().unwrap().into_inner().map(|i| i.as_str().to_string()).collect();
+            let op = parts.next().unwrap().as_str().to_string();
+            let value = parse_expr(parts.next().unwrap());
+            Stmt::Assign(AssignStmt { target_path, op, value })
+        }
+        Rule::expr_stmt => {
+            Stmt::Expr(parse_expr(inner.into_inner().next().unwrap()))
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn parse_expr(pair: pest::iterators::Pair<Rule>) -> Expr {
+    match pair.as_rule() {
+        // 一层一层剥开我的心
+        Rule::expr => parse_expr(pair.into_inner().next().unwrap()),
+
+        Rule::number => Expr::Number(pair.as_str().parse().unwrap()),
+        Rule::string_lit => Expr::StringLit(pair.into_inner().next().unwrap().as_str().to_string()),
+        Rule::path => Expr::Path(pair.into_inner().map(|i| i.as_str().to_string()).collect()),
+
+        Rule::closure => {
+            let mut inner = pair.into_inner();
+            let params = parse_fn_params(inner.next().unwrap());
+            let body = inner.next().unwrap().into_inner().map(parse_stmt).collect();
+            Expr::Closure { params, body }
+        }
+
+        Rule::call => {
+            let mut inner = pair.into_inner();
+            let path_pair = inner.next().unwrap();
+            let target = Box::new(Expr::Path(path_pair.into_inner().map(|i| i.as_str().to_string()).collect()));
+            let args = inner.map(parse_expr).collect();
+            Expr::Call { target, args }
+        }
+
+        _ => unreachable!("parse_expr 爆了: {:?}", pair.as_rule()),
+    }
 }

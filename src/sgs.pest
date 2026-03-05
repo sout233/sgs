@@ -6,31 +6,39 @@ program = { SOI ~ stmt* ~ EOI }
 
 ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 number = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+string_lit = ${ "\"" ~ inner_string ~ "\"" }
+inner_string = @{ (!"\"" ~ ANY)* }
 
-stmt = {
-    annotation |
-    mount_stmt |
-    param_stmt |
-    require_stmt |
-    fn_stmt
-}
+// 复杂的类型名称（例如 func(string) -> void）
+type_name = { ("func" ~ "(" ~ (type_name ~ ("," ~ type_name)*)? ~ ")" ~ "->" ~ type_name) | ident }
 
-// 强制所有的顶层语句和赋值语句带分号
+stmt = { annotation | mount_stmt | param_stmt | require_stmt | fn_stmt }
+
 annotation   = { "@" ~ ident ~ ident ~ ";" }
 mount_stmt   = { "mount" ~ ident ~ ";" }
-param_stmt   = { "param" ~ ident ~ ":" ~ ident ~ ";" }
+param_stmt   = { "param" ~ ident ~ ":" ~ type_name ~ ";" }
 require_stmt = { "require" ~ is_mut? ~ ident ~ ";" }
+is_mut       = { "mut" }
 
-// 将关键字提取为单独的 rule，方便 Rust 代码中精确匹配
-is_mut = { "mut" }
+// 函数参数规则
+fn_param  = { ident ~ ":" ~ type_name }
+fn_params = { (fn_param ~ ("," ~ fn_param)*)? }
 
-fn_stmt = { "fn" ~ ident ~ "()" ~ return_ty? ~ block }
-return_ty = { "->" ~ ident }
+fn_stmt   = { "fn" ~ ident ~ "(" ~ fn_params ~ ")" ~ return_ty? ~ block }
+return_ty = { "->" ~ type_name }
 
 block      = { "{" ~ block_stmt* ~ "}" }
-block_stmt = { assign_stmt }
+block_stmt = { let_stmt | assign_stmt | expr_stmt }
+
+// 语句级规则
+let_stmt    = { "let" ~ ident ~ "=" ~ expr ~ ";" }
 assign_stmt = { path ~ assign_op ~ expr ~ ";" }
-assign_op  = { "+=" | "-=" | "*=" | "/=" | "=" }
+expr_stmt   = { expr ~ ";" }
+assign_op   = { "+=" | "-=" | "*=" | "/=" | "=" }
 
 path = { ident ~ ("." ~ ident)* }
-expr = { number | path }
+
+// 表达式规则（注意优先级，call 和 closure 在前）
+expr = { closure | call | string_lit | number | path }
+closure = { "|" ~ fn_params ~ "|" ~ block }
+call = { path ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")" }
