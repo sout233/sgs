@@ -7,6 +7,7 @@
 
 pub mod ast;
 pub mod interpreter;
+pub mod analyzer;
 
 use ast::*;
 use pest::Parser;

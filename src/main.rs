@@ -1,6 +1,6 @@
-use sgs::ast::SgsNode;
 use sgs::interpreter::Interpreter;
 use sgs::parse_program;
+use sgs::{analyzer::Analyzer, ast::SgsNode};
 use std::fs;
 
 use ariadne::{Color, Config, Label, Report, ReportKind, Source};
@@ -31,12 +31,33 @@ fn main() {
             };
 
             if expected_msg.contains("semicolon") {
-                // 截取报错位置之前的全部源代码
-                let prefix = &source[..span.start];
-                // 倒序查找最后一个不是空白/换行符的字符位置
-                if let Some(last_char_pos) = prefix.rfind(|c: char| !c.is_whitespace()) {
-                    let c_len = prefix[last_char_pos..].chars().next().unwrap().len_utf8();
-                    span = last_char_pos..(last_char_pos + c_len);
+                let mut prefix = &source[..span.start];
+
+                loop {
+                    let original_len = prefix.len();
+                    prefix = prefix.trim_end();
+
+                    if let Some(idx) = prefix.rfind("//") {
+                        if !prefix[idx..].contains('\n') {
+                            prefix = &prefix[..idx].trim_end();
+                        }
+                    }
+
+                    if prefix.ends_with("*/") {
+                        if let Some(idx) = prefix.rfind("/*") {
+                            prefix = &prefix[..idx].trim_end();
+                        }
+                    }
+
+                    if prefix.len() == original_len {
+                        break;
+                    }
+                }
+
+                if !prefix.is_empty() {
+                    let last_char = prefix.chars().last().unwrap();
+                    let last_pos = prefix.len() - last_char.len_utf8();
+                    span = last_pos..(last_pos + last_char.len_utf8());
                 }
             }
 
@@ -57,20 +78,78 @@ fn main() {
         }
     };
 
+    let mut analyzer = Analyzer::new();
+    println!("Running Static Analysis...");
+
+    for node in &ast {
+        if let SgsNode::SystemDef(sys) = node {
+            analyzer.register_functions(sys);
+
+            for func in &sys.functions {
+                analyzer.check_function(func);
+            }
+        }
+    }
+
+    if !analyzer.errors.is_empty() {
+        for err in analyzer.errors {
+            let title = err.title;
+            let msg = err.message;
+            let byte_span = err.span;
+
+            if byte_span.start != 0 {
+                let char_start = source[..byte_span.start].chars().count();
+                let char_end = source[..byte_span.end].chars().count();
+                let char_span = char_start..char_end;
+
+                Report::build(ReportKind::Error, (filename, char_span.clone()))
+                    .with_message(title)
+                    .with_config(Config::default().with_compact(false))
+                    .with_label(
+                        Label::new((filename, char_span))
+                            .with_message(msg)
+                            .with_color(Color::Red),
+                    )
+                    .finish()
+                    .print((filename, Source::from(&source)))
+                    .unwrap();
+            } else {
+                eprintln!("Static check err: {}", msg);
+            }
+        }
+        return;
+    }
+
+    println!("Static check passed");
+
     let mut vm = Interpreter::new();
     let mut executed = false;
     for node in ast {
         if let SgsNode::SystemDef(sys) = node {
+            for func in &sys.functions {
+                let params = func.params.iter().map(|p| p.name.clone()).collect();
+                let closure_val = sgs::interpreter::Value::Closure {
+                    params,
+                    body: func.statements.clone(),
+                    captured_env: vm.env.scopes.clone(),
+                };
+                vm.env.define(func.name.clone(), closure_val, false);
+            }
+
             for func in sys.functions {
                 if func.name == "main" {
-                    println!("Running {}", sys.name);
+                    println!("Running {}\n", sys.name);
 
                     if let Err((msg, span)) = vm.execute_function(&func) {
-                        Report::build(ReportKind::Error, (filename, span.clone()))
+                        let char_start = source[..span.start].chars().count();
+                        let char_end = source[..span.end].chars().count();
+                        let char_span = char_start..char_end;
+
+                        Report::build(ReportKind::Error, (filename, char_span.clone()))
                             .with_message("Runtime Error")
                             .with_config(Config::default().with_compact(false))
                             .with_label(
-                                Label::new((filename, span))
+                                Label::new((filename, char_span.clone()))
                                     .with_message(msg)
                                     .with_color(Color::Yellow),
                             )

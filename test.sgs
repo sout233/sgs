@@ -1,7 +1,27 @@
 @type System;
-@name MutabilityAndScopeTest;
+@name Test;
 
-fn main() -> void {
-  let a = 3;
-  println(a2);
+// fn get_msg() -> string {
+//     return 100; // 错误 1：返回值不对
+// }
+//
+// fn main() -> void {
+//     let msg = get_msg();
+//     let mut hp = 10;
+//
+//     hp = "dead";     // 错误 2：类型不匹配
+//     hp = msg + 5;    // 错误 3：字符串不能加数字
+//
+//     let pi = 3.14;
+//     pi = 3.1415;     // 错误 4：不可变变量赋值
+// }
+
+fn log(msg: string) -> void {
+    println("[log]", msg);
+}
+
+fn main() {
+    let a = 2;
+    println(a, 2);
+    log("running main");
 }
