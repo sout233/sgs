@@ -77,17 +77,10 @@ impl Analyzer {
         self.scopes.pop();
     }
 
-    fn define_var(&mut self, name: String, is_mut: bool, ty: Type, span: &Span) {
+    fn define_var(&mut self, name: String, is_mut: bool, ty: Type, _span: &Span) {
         let current_scope = self.scopes.last_mut().unwrap();
-        if current_scope.contains_key(&name) {
-            self.errors.push(StaticCheckError {
-                title: format!("变量 '{}' 已经被声明过了", name),
-                message: format!("变量 '{}' 已经被声明过了", name),
-                span: span.clone(),
-            });
-        } else {
-            current_scope.insert(name, Symbol { is_mut, ty });
-        }
+
+        current_scope.insert(name, Symbol { is_mut, ty });
     }
 
     fn resolve_var(&self, name: &str) -> Option<&Symbol> {
@@ -289,7 +282,12 @@ impl Analyzer {
                     if l_ty != Type::Number || r_ty != Type::Number {
                         self.errors.push(StaticCheckError::new(
                             "类型错误",
-                            "操作符 '{}' 只能用于两个数字，但得到了 '{}' 和 '{}'",
+                            format!(
+                                "操作符 '{}' 只能用于两个数字，但得到了 '{}' 和 '{}'",
+                                op,
+                                l_ty.to_string(),
+                                r_ty.to_string()
+                            ),
                             fallback_span.clone(),
                         ));
                         return Type::Unknown;
