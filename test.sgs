@@ -1,16 +1,17 @@
 @type System;
-@name HelloWorldApp;
+@name ClosureTest;
 
 fn main() -> void {
-    let greeting = "Hello from SGS!";
-    println(greeting);
+    let lambda_print = |msg: string| {
+        println("from closure:", msg);
+    };
 
-    let hp = 100;
-    let damage = 15 * 2;
-    hp -= damage;
+    lambda_print("hello world");
 
-    println("hp:", hp)
+    let run_twice = |func: func, text: string| {
+        func(text);
+        func(text);
+    };
 
-    let result = (10 + 5) * 2 / 3;
-    println("(10 + 5) * 2 / 3 = ", result);
+    run_twice(lambda_print, "ok");
 }

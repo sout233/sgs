@@ -3,7 +3,7 @@
 //! 抽象至极的语法树，为ECS优化
 
 /// 主要的节点
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum SgsNode {
     EntityDef(EntityDef),
     ComponentDef(ComponentDef),
@@ -11,21 +11,21 @@ pub enum SgsNode {
 }
 
 /// Entity 定义
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct EntityDef {
     pub name: String,
     pub components: Vec<String>,
 }
 
 /// Component 定义
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ComponentDef {
     pub name: String,
     pub params: Vec<Param>,
 }
 
 /// System 定义
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct SystemDef {
     pub name: String,
     pub required_components: Vec<RequiredComponent>,
@@ -33,7 +33,7 @@ pub struct SystemDef {
 }
 
 /// Param 定义
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Param {
     pub name: String,
     /// 其实这是type
@@ -41,7 +41,7 @@ pub struct Param {
 }
 
 /// 用于System里的require关键字
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct RequiredComponent {
     /// Component是否可变
     pub is_mut: bool,
@@ -50,7 +50,7 @@ pub struct RequiredComponent {
 }
 
 /// 函数定义
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct FunctionDef {
     pub name: String,
     pub params: Vec<FnParam>,
@@ -60,7 +60,7 @@ pub struct FunctionDef {
     pub statements: Vec<Stmt>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct FnParam {
     pub name: String,
     /// 其实是type
@@ -68,7 +68,7 @@ pub struct FnParam {
 }
 
 /// 语句
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
     /// 声明语句
     Let { name: String, value: Expr },
@@ -79,7 +79,7 @@ pub enum Stmt {
 }
 
 /// 赋值语句
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct AssignStmt {
     /// 左值的路径
     pub target_path: Vec<String>,
@@ -90,7 +90,7 @@ pub struct AssignStmt {
 }
 
 /// 表达式
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
     Number(f64),
     StringLit(String),

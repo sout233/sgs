@@ -6,6 +6,11 @@ pub enum Value {
     Number(f64),
     String(String),
     Void,
+    Closure {
+        params: Vec<String>,
+        body: Vec<Stmt>,
+        captured_env: HashMap<String, Value>,
+    },
 }
 
 pub struct Environment {
@@ -83,29 +88,71 @@ impl Interpreter {
             }
             Expr::Call { target, args } => {
                 if let Expr::Path(path) = &**target {
-                    if path.len() == 1 {
-                        let func_name = &path[0];
-
-                        if func_name == "println" {
-                            let mut outputs = Vec::new();
-                            for arg in args {
-                                let val = self.eval_expr(arg)?;
-                                match val {
-                                    Value::Number(n) => outputs.push(n.to_string()),
-                                    Value::String(s) => outputs.push(s),
-                                    Value::Void => outputs.push("void".to_string()),
-                                }
+                    if path.len() == 1 && path[0] == "println" {
+                        let mut outputs = Vec::new();
+                        for arg in args {
+                            let val = self.eval_expr(arg)?;
+                            match val {
+                                Value::Number(n) => outputs.push(n.to_string()),
+                                Value::String(s) => outputs.push(s),
+                                Value::Closure { .. } => outputs.push("<closure>".to_string()),
+                                Value::Void => outputs.push("void".to_string()),
                             }
-                            println!("{}", outputs.join(" "));
-                            return Ok(Value::Void);
                         }
-
-                        return Err(format!("找不到fn: {}", func_name));
+                        println!("{}", outputs.join(" "));
+                        return Ok(Value::Void);
                     }
                 }
-                Err("暂不支持复杂的函数调用目标".to_string())
+
+                let target_val = self.eval_expr(target)?;
+
+                if let Value::Closure {
+                    params,
+                    body,
+                    captured_env,
+                } = target_val
+                {
+                    if args.len() != params.len() {
+                        return Err(format!(
+                            "参数数量不匹配: Expected {} 个，got {} 个",
+                            params.len(),
+                            args.len()
+                        ));
+                    }
+
+                    let mut arg_values = Vec::new();
+                    for arg in args {
+                        arg_values.push(self.eval_expr(arg)?);
+                    }
+
+                    let old_env = self.env.variables.clone();
+
+                    self.env.variables = captured_env;
+
+                    for (name, val) in params.into_iter().zip(arg_values) {
+                        self.env.define(name, val);
+                    }
+
+                    for stmt in &body {
+                        self.eval_stmt(stmt)?;
+                    }
+
+                    self.env.variables = old_env;
+
+                    return Ok(Value::Void);
+                }
+
+                Err("调用的目标不是一个可执行的函数或闭包".to_string())
             }
-            _ => Err("该表达式类型的计算尚未实现".to_string()),
+            Expr::Closure { params, body } => {
+                let param_names = params.iter().map(|p| p.name.clone()).collect();
+
+                Ok(Value::Closure {
+                    params: param_names,
+                    body: body.clone(),
+                    captured_env: self.env.variables.clone(),
+                })
+            }
         }
     }
 
