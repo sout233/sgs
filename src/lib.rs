@@ -150,9 +150,23 @@ fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Stmt {
     match inner.as_rule() {
         Rule::let_stmt => {
             let mut parts = inner.into_inner();
-            let name = parts.next().unwrap().as_str().to_string();
+
+            let mut is_mut = false;
+            let mut next_pair = parts.next().unwrap();
+
+            if next_pair.as_rule() == Rule::is_mut {
+                is_mut = true;
+                next_pair = parts.next().unwrap();
+            }
+
+            let name = next_pair.as_str().to_string();
             let expr = parse_expr(parts.next().unwrap());
-            Stmt::Let { name, value: expr }
+
+            Stmt::Let {
+                is_mut,
+                name,
+                value: expr,
+            }
         }
         Rule::assign_stmt => {
             let mut parts = inner.into_inner();

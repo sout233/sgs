@@ -71,7 +71,11 @@ pub struct FnParam {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
     /// 声明语句
-    Let { name: String, value: Expr },
+    Let {
+        is_mut: bool,
+        name: String,
+        value: Expr,
+    },
     /// 赋值语句
     Assign(AssignStmt),
     /// 表达式语句

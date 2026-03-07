@@ -1,4 +1,3 @@
-// src/main.rs
 use sgs::ast::SgsNode;
 use sgs::interpreter::Interpreter;
 use sgs::parse_program;

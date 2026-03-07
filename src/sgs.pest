@@ -35,7 +35,7 @@ block      = { "{" ~ block_stmt* ~ "}" }
 block_stmt = { let_stmt | assign_stmt | expr_stmt }
 
 // 语句级规则
-let_stmt    = { "let" ~ ident ~ "=" ~ expr ~ semicolon }
+let_stmt = { "let" ~ is_mut? ~ ident ~ "=" ~ expr ~ semicolon }
 assign_stmt = { path ~ assign_op ~ expr ~ semicolon }
 expr_stmt   = { expr ~ semicolon }
 assign_op   = { "+=" | "-=" | "*=" | "/=" | "=" }
