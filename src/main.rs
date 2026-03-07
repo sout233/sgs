@@ -63,11 +63,24 @@ fn main() {
         if let SgsNode::SystemDef(sys) = node {
             for func in sys.functions {
                 if func.name == "main" {
-                    println!("Starting SGS [{}]\n", sys.name);
-                    if let Err(e) = vm.execute_function(&func) {
-                        eprintln!("Runtime Error: {}", e);
+                    println!("Running {}", sys.name);
+
+                    if let Err((msg, span)) = vm.execute_function(&func) {
+                        Report::build(ReportKind::Error, (filename, span.clone()))
+                            .with_message("Runtime Error")
+                            .with_config(Config::default().with_compact(false))
+                            .with_label(
+                                Label::new((filename, span))
+                                    .with_message(msg)
+                                    .with_color(Color::Yellow),
+                            )
+                            .finish()
+                            .print((filename, Source::from(&source)))
+                            .unwrap();
+                    } else {
+                        println!("\n--- EOF ---");
                     }
-                    println!("\n---EOF---");
+
                     executed = true;
                 }
             }

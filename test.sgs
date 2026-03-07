@@ -2,30 +2,6 @@
 @name MutabilityAndScopeTest;
 
 fn main() -> void {
-    // 1. 测试默认不可变
-    let pi = 3.14;
-    // pi = 3.14159; // 加上这句，程序会立刻报错中断！
-
-    // 2. 测试 mut 关键字
-    let mut counter = 0;
-    counter += 1;
-    println("当前 Counter:", counter);
-
-    // 3. 测试作用域与闭包的环境保留
-    let make_adder = |step: number| {
-        let mut sum = 0;
-        let closure = || {
-            sum += step;
-            println("Sum 变成了:", sum);
-        };
-        // 在 SGS 中目前还没法直接 return 闭包，但我们利用高阶函数验证：
-        closure();
-        closure();
-    };
-
-    println("执行嵌套闭包:");
-    make_adder(5);
-
-    // sum 和 step 都在局部作用域，外面无法访问！
-    // println(sum); // 如果你尝试打印 sum，会报错“未定义的变量”
+  let a = 3;
+  println(a2);
 }

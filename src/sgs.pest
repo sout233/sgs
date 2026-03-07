@@ -6,6 +6,12 @@ program = { SOI ~ stmt* ~ EOI }
 ident        = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 number       = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 string_lit   = ${ "\"" ~ inner_string ~ "\"" }
+interp_string = ${ "$" ~ "\"" ~ interp_part* ~ "\"" }
+// interp_part 是内部的纯文本或 {} 表达式
+interp_part   = _{ interp_text | "{" ~ interp_expr ~ "}" }
+// 匹配除引号和 { 之外的所有字符
+interp_text   = @{ (!("\"" | "{") ~ ANY)+ }
+interp_expr   = !{ expr }
 inner_string = @{ (!"\"" ~ ANY)* }
 semicolon    =  { ";" }
 
@@ -31,8 +37,9 @@ fn_params = { (fn_param ~ ("," ~ fn_param)*)? }
 fn_stmt   = { "fn" ~ ident ~ "(" ~ fn_params ~ ")" ~ return_ty? ~ block }
 return_ty = { "->" ~ type_name }
 
-block      = { "{" ~ block_stmt* ~ "}" }
-block_stmt = { let_stmt | assign_stmt | expr_stmt }
+block = { "{" ~ block_stmt* ~ expr? ~ "}" }
+block_stmt = { return_stmt | let_stmt | assign_stmt | expr_stmt }
+return_stmt = { "return" ~ expr? ~ semicolon }
 
 // 语句级规则
 let_stmt = { "let" ~ is_mut? ~ ident ~ "=" ~ expr ~ semicolon }
@@ -45,7 +52,7 @@ path = { ident ~ ("." ~ ident)* }
 // 表达式
 expr   = { term ~ (add_op ~ term)* }
 term   = { factor ~ (mul_op ~ factor)* }
-factor = { closure | call | string_lit | number | path | "(" ~ expr ~ ")" }
+factor = { closure | call | interp_string | string_lit | number | path | "(" ~ expr ~ ")" }
 
 add_op = { "+" | "-" }
 mul_op = { "*" | "/" }

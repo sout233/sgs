@@ -461,3 +461,78 @@ fn test_immutable_assignment_error() {
         panic!("应该是 SystemDef");
     }
 }
+
+#[test]
+fn test_advanced_expressions_and_interpolation() {
+    let script = r#"
+        @type System;
+        @name AdvancedSyntax;
+
+        fn get_32() -> number {
+            // 隐式返回 (无分号)
+            32
+        }
+
+        fn get_10() -> number {
+            // 显式返回
+            return 10;
+        }
+
+        fn main() -> void {
+            // 验证跨行多行表达式，注意优先级：33/11 先算
+            let a =
+                32 + 33 / 11 + 10
+                + get_32()
+                - get_10();
+
+            // 验证字符串内插，并且在花括号里做运算！
+            let msg = $"Result a is {a}, next is {a + 1}";
+        }
+    "#;
+
+    let ast = sgs::parse_program(script).unwrap();
+    let mut vm = sgs::interpreter::Interpreter::new();
+
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        for func in &sys.functions {
+            // 提取参数名列表
+            let params = func.params.iter().map(|p| p.name.clone()).collect();
+
+            // 将顶层函数包装成闭包
+            let closure_val = sgs::interpreter::Value::Closure {
+                params,
+                body: func.statements.clone(),
+                captured_env: vm.env.scopes.clone(),
+            };
+
+            // 存入全局环境
+            vm.env.define(func.name.clone(), closure_val, false);
+        }
+
+        let main_func = sys.functions.iter().find(|f| f.name == "main").unwrap();
+
+        vm.env.push_scope();
+        for stmt in &main_func.statements {
+            let res = vm.eval_stmt(stmt);
+            assert!(res.is_ok(), "执行失败: {:?}", res.err());
+        }
+
+        // 32 + (33/11) + 10 + 32 - 10
+        // = 32 + 3 + 10 + 32 - 10
+        // = 67
+        assert_eq!(
+            vm.env.get_val("a").unwrap(),
+            sgs::interpreter::Value::Number(67.0)
+        );
+
+        // 字符串内插验证
+        assert_eq!(
+            vm.env.get_val("msg").unwrap(),
+            sgs::interpreter::Value::String("Result a is 67, next is 68".to_string())
+        );
+
+        vm.env.pop_scope();
+    } else {
+        panic!("预期应该是 SystemDef");
+    }
+}

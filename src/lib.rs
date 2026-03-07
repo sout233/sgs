@@ -111,7 +111,7 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
                             block_pair = inner.next().unwrap();
                         }
 
-                        let statements = block_pair.into_inner().map(parse_stmt).collect();
+                        let statements = parse_block(block_pair);
 
                         system_fns.push(FunctionDef {
                             name: fn_name.to_string(),
@@ -145,8 +145,12 @@ fn parse_fn_params(pair: pest::iterators::Pair<Rule>) -> Vec<FnParam> {
         .collect()
 }
 
-fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Stmt {
+fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Spanned<Stmt> {
+    let span = pair.as_span();
+    let byte_range = span.start()..span.end();
+
     let inner = pair.into_inner().next().unwrap();
+
     match inner.as_rule() {
         Rule::let_stmt => {
             let mut parts = inner.into_inner();
@@ -162,10 +166,13 @@ fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Stmt {
             let name = next_pair.as_str().to_string();
             let expr = parse_expr(parts.next().unwrap());
 
-            Stmt::Let {
-                is_mut,
-                name,
-                value: expr,
+            Spanned {
+                node: Stmt::Let {
+                    is_mut,
+                    name,
+                    value: expr,
+                },
+                span: byte_range,
             }
         }
         Rule::assign_stmt => {
@@ -178,13 +185,35 @@ fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Stmt {
                 .collect();
             let op = parts.next().unwrap().as_str().to_string();
             let value = parse_expr(parts.next().unwrap());
-            Stmt::Assign(AssignStmt {
-                target_path,
-                op,
-                value,
-            })
+            Spanned {
+                node: Stmt::Assign(AssignStmt {
+                    target_path,
+                    op,
+                    value,
+                }),
+                span: byte_range,
+            }
         }
-        Rule::expr_stmt => Stmt::Expr(parse_expr(inner.into_inner().next().unwrap())),
+        Rule::expr_stmt => Spanned {
+            node: Stmt::Expr(parse_expr(inner.into_inner().next().unwrap())),
+            span: byte_range,
+        },
+        Rule::return_stmt => {
+            let mut parts = inner.into_inner();
+            let next_pair = parts.next().unwrap();
+
+            if next_pair.as_rule() == Rule::expr {
+                Spanned {
+                    node: Stmt::Return(Some(parse_expr(next_pair))),
+                    span: byte_range,
+                }
+            } else {
+                Spanned {
+                    node: Stmt::Return(None),
+                    span: byte_range,
+                }
+            }
+        }
         _ => unreachable!(),
     }
 }
@@ -242,16 +271,13 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
         }
         Rule::path => Expr::Path(inner.into_inner().map(|i| i.as_str().to_string()).collect()),
         Rule::closure => {
-            let mut closure_inner = inner.into_inner();
-            let params = parse_fn_params(closure_inner.next().unwrap());
-            let body = closure_inner
-                .next()
-                .unwrap()
-                .into_inner()
-                .map(parse_stmt)
-                .collect();
-            Expr::Closure { params, body }
-        }
+                    let mut closure_inner = inner.into_inner();
+                    let params = parse_fn_params(closure_inner.next().unwrap());
+
+                    let body = parse_block(closure_inner.next().unwrap());
+
+                    Expr::Closure { params, body }
+                }
         Rule::call => {
             let mut call_inner = inner.into_inner();
             let path_pair = call_inner.next().unwrap();
@@ -265,6 +291,39 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
             Expr::Call { target, args }
         }
         Rule::expr => parse_expr(inner),
+        Rule::interp_string => {
+            let mut parts = Vec::new();
+            for part in inner.into_inner() {
+                match part.as_rule() {
+                    Rule::interp_text => parts.push(Expr::StringLit(part.as_str().to_string())),
+                    Rule::interp_expr => parts.push(parse_expr(part.into_inner().next().unwrap())),
+                    _ => unreachable!("意外的内插规则: {:?}", part.as_rule()),
+                }
+            }
+            Expr::StringInterp(parts)
+        }
         _ => unreachable!("parse_expr 爆了: {:?}", inner.as_rule()),
     }
+}
+
+fn parse_block(pair: pest::iterators::Pair<Rule>) -> Vec<Spanned<Stmt>> {
+    let mut stmts = Vec::new();
+    for inner in pair.into_inner() {
+        match inner.as_rule() {
+            Rule::block_stmt => {
+                stmts.push(parse_stmt(inner));
+            }
+            Rule::expr => {
+                let span = inner.as_span();
+                let byte_range = span.start()..span.end();
+
+                stmts.push(Spanned {
+                    node: Stmt::ImplicitReturn(parse_expr(inner)),
+                    span: byte_range,
+                });
+            }
+            _ => unreachable!(),
+        }
+    }
+    stmts
 }

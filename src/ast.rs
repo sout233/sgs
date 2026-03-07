@@ -2,6 +2,14 @@
 //! # AST Definition
 //! 抽象至极的语法树，为ECS优化
 
+pub type Span = std::ops::Range<usize>;
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Spanned<T> {
+    pub node: T,
+    pub span: Span,
+}
+
 /// 主要的节点
 #[derive(Debug, PartialEq, Clone)]
 pub enum SgsNode {
@@ -57,7 +65,7 @@ pub struct FunctionDef {
     /// 返回值的类型 (-> ???)
     pub return_ty: Option<String>,
     /// 函数体里的东西
-    pub statements: Vec<Stmt>,
+    pub statements: Vec<Spanned<Stmt>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -80,6 +88,10 @@ pub enum Stmt {
     Assign(AssignStmt),
     /// 表达式语句
     Expr(Expr),
+    /// 有分号的返回语句
+    Return(Option<Expr>),
+    /// 没分号的返回语句
+    ImplicitReturn(Expr),
 }
 
 /// 赋值语句
@@ -98,12 +110,14 @@ pub struct AssignStmt {
 pub enum Expr {
     Number(f64),
     StringLit(String),
+    /// 内插字符串
+    StringInterp(Vec<Expr>),
     /// 路径访问（点）表达式
     Path(Vec<String>),
     /// 闭包
     Closure {
         params: Vec<FnParam>,
-        body: Vec<Stmt>,
+        body: Vec<Spanned<Stmt>>
     },
     /// 函数调用
     Call {
