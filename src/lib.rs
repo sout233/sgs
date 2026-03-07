@@ -6,6 +6,7 @@
 //!
 
 pub mod ast;
+pub mod interpreter;
 
 use ast::*;
 use pest::Parser;
@@ -105,7 +106,8 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
                         let mut block_pair = inner.next().unwrap();
 
                         if block_pair.as_rule() == Rule::return_ty {
-                            return_ty = Some(block_pair.as_str().replace(" ", "").replace("->", ""));
+                            return_ty =
+                                Some(block_pair.as_str().replace(" ", "").replace("->", ""));
                             block_pair = inner.next().unwrap();
                         }
 
@@ -132,13 +134,15 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
 }
 
 fn parse_fn_params(pair: pest::iterators::Pair<Rule>) -> Vec<FnParam> {
-    pair.into_inner().map(|p| {
-        let mut inner = p.into_inner();
-        FnParam {
-            name: inner.next().unwrap().as_str().to_string(),
-            ty: inner.next().unwrap().as_str().replace(" ", ""),
-        }
-    }).collect()
+    pair.into_inner()
+        .map(|p| {
+            let mut inner = p.into_inner();
+            FnParam {
+                name: inner.next().unwrap().as_str().to_string(),
+                ty: inner.next().unwrap().as_str().replace(" ", ""),
+            }
+        })
+        .collect()
 }
 
 fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Stmt {
@@ -152,42 +156,101 @@ fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Stmt {
         }
         Rule::assign_stmt => {
             let mut parts = inner.into_inner();
-            let target_path = parts.next().unwrap().into_inner().map(|i| i.as_str().to_string()).collect();
+            let target_path = parts
+                .next()
+                .unwrap()
+                .into_inner()
+                .map(|i| i.as_str().to_string())
+                .collect();
             let op = parts.next().unwrap().as_str().to_string();
             let value = parse_expr(parts.next().unwrap());
-            Stmt::Assign(AssignStmt { target_path, op, value })
+            Stmt::Assign(AssignStmt {
+                target_path,
+                op,
+                value,
+            })
         }
-        Rule::expr_stmt => {
-            Stmt::Expr(parse_expr(inner.into_inner().next().unwrap()))
-        }
+        Rule::expr_stmt => Stmt::Expr(parse_expr(inner.into_inner().next().unwrap())),
         _ => unreachable!(),
     }
 }
 
 fn parse_expr(pair: pest::iterators::Pair<Rule>) -> Expr {
     match pair.as_rule() {
-        // 一层一层剥开我的心
-        Rule::expr => parse_expr(pair.into_inner().next().unwrap()),
-
-        Rule::number => Expr::Number(pair.as_str().parse().unwrap()),
-        Rule::string_lit => Expr::StringLit(pair.into_inner().next().unwrap().as_str().to_string()),
-        Rule::path => Expr::Path(pair.into_inner().map(|i| i.as_str().to_string()).collect()),
-
-        Rule::closure => {
+        Rule::expr => {
             let mut inner = pair.into_inner();
-            let params = parse_fn_params(inner.next().unwrap());
-            let body = inner.next().unwrap().into_inner().map(parse_stmt).collect();
+            // 获取左值第一项
+            let mut left = parse_term(inner.next().unwrap());
+
+            // 组合后方的算子符号
+            while let Some(op_pair) = inner.next() {
+                let op = op_pair.as_str().to_string();
+                let right = parse_term(inner.next().unwrap());
+                left = Expr::BinaryOp {
+                    left: Box::new(left),
+                    op,
+                    right: Box::new(right),
+                };
+            }
+            left
+        }
+        Rule::term => parse_term(pair),
+        Rule::factor => parse_factor(pair),
+        _ => unreachable!("parse_expr 爆了: {:?}", pair.as_rule()),
+    }
+}
+
+fn parse_term(pair: pest::iterators::Pair<Rule>) -> Expr {
+    let mut inner = pair.into_inner();
+    // 依旧左值第一项
+    let mut left = parse_factor(inner.next().unwrap());
+
+    while let Some(op_pair) = inner.next() {
+        let op = op_pair.as_str().to_string();
+        let right = parse_factor(inner.next().unwrap());
+        left = Expr::BinaryOp {
+            left: Box::new(left),
+            op,
+            right: Box::new(right),
+        };
+    }
+    left
+}
+
+fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
+    // 真的要用unwrap吗。？
+    let inner = pair.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::number => Expr::Number(inner.as_str().parse().unwrap()),
+        Rule::string_lit => {
+            Expr::StringLit(inner.into_inner().next().unwrap().as_str().to_string())
+        }
+        Rule::path => Expr::Path(inner.into_inner().map(|i| i.as_str().to_string()).collect()),
+        Rule::closure => {
+            let mut closure_inner = inner.into_inner();
+            let params = parse_fn_params(closure_inner.next().unwrap());
+            let body = closure_inner
+                .next()
+                .unwrap()
+                .into_inner()
+                .map(parse_stmt)
+                .collect();
             Expr::Closure { params, body }
         }
-
         Rule::call => {
-            let mut inner = pair.into_inner();
-            let path_pair = inner.next().unwrap();
-            let target = Box::new(Expr::Path(path_pair.into_inner().map(|i| i.as_str().to_string()).collect()));
-            let args = inner.map(parse_expr).collect();
+            let mut call_inner = inner.into_inner();
+            let path_pair = call_inner.next().unwrap();
+            let target = Box::new(Expr::Path(
+                path_pair
+                    .into_inner()
+                    .map(|i| i.as_str().to_string())
+                    .collect(),
+            ));
+            let args = call_inner.map(parse_expr).collect();
             Expr::Call { target, args }
         }
-
-        _ => unreachable!("parse_expr 爆了: {:?}", pair.as_rule()),
+        Rule::expr => parse_expr(inner),
+        _ => unreachable!("parse_expr 爆了: {:?}", inner.as_rule()),
     }
 }

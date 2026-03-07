@@ -106,4 +106,10 @@ pub enum Expr {
         target: Box<Expr>,
         args: Vec<Expr>,
     },
+    /// 二元运算符表达式
+    BinaryOp {
+        left: Box<Expr>,
+        op: String,
+        right: Box<Expr>,
+    },
 }

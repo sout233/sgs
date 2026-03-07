@@ -1,0 +1,16 @@
+@type System;
+@name HelloWorldApp;
+
+fn main() -> void {
+    let greeting = "Hello from SGS!";
+    println(greeting);
+
+    let hp = 100;
+    let damage = 15 * 2;
+    hp -= damage;
+
+    println("hp:", hp)
+
+    let result = (10 + 5) * 2 / 3;
+    println("(10 + 5) * 2 / 3 = ", result);
+}

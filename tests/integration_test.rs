@@ -1,5 +1,5 @@
-// tests/integration_test.rs
 use sgs::ast::*;
+use sgs::interpreter::{Interpreter, Value};
 use sgs::parse_program;
 
 #[test]
@@ -166,5 +166,191 @@ fn test_fn() {
         }
     } else {
         panic!("Expected SystemDef");
+    }
+}
+
+#[test]
+#[allow(unused)]
+fn test_calculation_parsing() {
+    let script = r#"
+        @type System;
+        @name MathTest;
+
+        fn calculate() -> void {
+            let base_val = 100;
+
+            Player.hp += 50;
+            Player.hp -= 20;
+            Player.multiplier *= 2;
+            Player.defense /= 1.5;
+        }
+    "#;
+
+    let ast = parse_program(script).unwrap();
+    assert_eq!(ast.len(), 1);
+
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        assert_eq!(sys.functions.len(), 1);
+        let func = &sys.functions[0];
+
+        assert_eq!(func.statements.len(), 5);
+
+        if let Stmt::Let { name, value } = &func.statements[0] {
+            assert_eq!(name, "base_val");
+            assert_eq!(*value, Expr::Number(100.0));
+        } else {
+            panic!("应是let");
+        }
+
+        if let Stmt::Assign(AssignStmt {
+            target_path,
+            op,
+            value,
+        }) = &func.statements[1]
+        {
+            assert_eq!(target_path, &vec!["Player", "hp"]);
+            assert_eq!(op, "+=");
+            assert_eq!(*value, Expr::Number(50.0));
+        } else {
+            panic!("应该是+=");
+        }
+
+        if let Stmt::Assign(AssignStmt {
+            target_path,
+            op,
+            value,
+        }) = &func.statements[2]
+        {
+            assert_eq!(op, "-=");
+            assert_eq!(*value, Expr::Number(20.0));
+        } else {
+            panic!("应当是-=");
+        }
+
+        if let Stmt::Assign(AssignStmt {
+            target_path,
+            op,
+            value,
+        }) = &func.statements[3]
+        {
+            assert_eq!(op, "*=");
+            assert_eq!(*value, Expr::Number(2.0));
+        } else {
+            panic!("应该是 *=");
+        }
+
+        if let Stmt::Assign(AssignStmt {
+            target_path,
+            op,
+            value,
+        }) = &func.statements[4]
+        {
+            assert_eq!(op, "/=");
+            assert_eq!(*value, Expr::Number(1.5));
+        } else {
+            panic!("应该是 /=");
+        }
+    } else {
+        panic!("应该是 SystemDef 节点");
+    }
+}
+
+#[test]
+fn test_complex_math_expression() {
+    let script = r#"
+        @type System;
+        @name MathTest;
+
+        fn calc() -> void {
+            let result = 10 + 5 * (2 - Player.defense);
+        }
+    "#;
+
+    let ast = parse_program(script).unwrap();
+
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        let func = &sys.functions[0];
+
+        if let Stmt::Let { name, value } = &func.statements[0] {
+            assert_eq!(name, "result");
+
+            // 外层应当是加法
+            if let Expr::BinaryOp { left, op, right } = value {
+                assert_eq!(op, "+");
+                assert_eq!(**left, Expr::Number(10.0));
+
+                // 右侧是乘法
+                if let Expr::BinaryOp {
+                    left: mul_left,
+                    op: mul_op,
+                    right: mul_right,
+                } = &**right
+                {
+                    assert_eq!(mul_op, "*");
+                    assert_eq!(**mul_left, Expr::Number(5.0));
+
+                    // 括号内是减法
+                    if let Expr::BinaryOp {
+                        left: sub_left,
+                        op: sub_op,
+                        right: sub_right,
+                    } = &**mul_right
+                    {
+                        assert_eq!(sub_op, "-");
+                        assert_eq!(**sub_left, Expr::Number(2.0));
+                        assert_eq!(
+                            **sub_right,
+                            Expr::Path(vec!["Player".to_string(), "defense".to_string()])
+                        );
+                    } else {
+                        panic!("预期括号内为减法节点");
+                    }
+                } else {
+                    panic!("预期右侧为乘法节点");
+                }
+            } else {
+                panic!("预期最外层为加法节点");
+            }
+        } else {
+            panic!("Expected Let stmt");
+        }
+    } else {
+        panic!("Expected SystemDef");
+    }
+}
+
+#[test]
+fn test_interpreter_math_execution() {
+    let script = r#"
+        @type System;
+        @name EngineMath;
+
+        fn _process() -> void {
+            let base = 10;
+            let offset = 2 * 3;            // 6
+            let total = base + offset;     // 16
+
+            total += 4;                    // 20
+            total *= (2 + 3);              // 100
+            total /= 2;                    // 50
+        }
+    "#;
+
+    let ast = sgs::parse_program(script).unwrap();
+
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        let func = &sys.functions[0];
+
+        let mut vm = Interpreter::new();
+        let result = vm.execute_function(func);
+
+        assert!(result.is_ok(), "计算测试大爆炸: {:?}", result.err());
+
+        assert_eq!(vm.env.get("base").unwrap(), Value::Number(10.0));
+        assert_eq!(vm.env.get("offset").unwrap(), Value::Number(6.0));
+
+        assert_eq!(vm.env.get("total").unwrap(), Value::Number(50.0));
+    } else {
+        panic!("预期应该是SystemDef");
     }
 }
