@@ -5,7 +5,7 @@ fn main() -> void {
     let a = 100;
     println("First a:", a);
 
-    let a = "hello shadowing";
+    let mut a = "hello shadowing";
     println("Second a:", a);
 
     a = "world";

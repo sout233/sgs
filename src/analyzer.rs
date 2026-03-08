@@ -7,6 +7,7 @@ pub enum Type {
     Number,
     String,
     Void,
+    Bool,
     Function { params: Vec<Type>, ret: Box<Type> },
     Unknown,
     Any,
@@ -18,6 +19,7 @@ impl Type {
             "number" | "float" => Type::Number,
             "string" => Type::String,
             "void" => Type::Void,
+            "bool" => Type::Bool,
             _ => Type::Unknown,
         }
     }
@@ -29,6 +31,7 @@ impl std::fmt::Display for Type {
             Type::Number => write!(f, "number"),
             Type::String => write!(f, "string"),
             Type::Void => write!(f, "void"),
+            Type::Bool => write!(f, "bool"),
             Type::Unknown => write!(f, "unknown"),
             Type::Any => write!(f, "any"),
 
@@ -247,6 +250,30 @@ impl Analyzer {
             Stmt::Expr(expr) => {
                 self.infer_expr(expr, span);
             }
+            Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let cond_ty = self.infer_expr(condition, span);
+                if cond_ty != Type::Unknown && cond_ty != Type::Bool {
+                    self.errors.push(StaticCheckError::new(
+                        "条件类型错误",
+                        format!("'if' 的条件必须是 'bool' 类型，但得到了 '{}'", cond_ty),
+                        span.clone(),
+                    ));
+                }
+
+                self.push_scope();
+                for s in then_branch {
+                    self.check_stmt(s);
+                }
+                self.pop_scope();
+
+                if let Some(else_b) = else_branch {
+                    self.check_stmt(else_b);
+                }
+            }
             Stmt::Return(opt_expr) => {
                 let actual_ty = match opt_expr {
                     Some(e) => self.infer_expr(e, span),
@@ -309,30 +336,50 @@ impl Analyzer {
                     }
                 }
             }
+            Expr::Bool(_) => Type::Bool,
             Expr::BinaryOp { left, op, right } => {
-                let l_ty = self.infer_expr(left, fallback_span);
-                let r_ty = self.infer_expr(right, fallback_span);
+                            let l_ty = self.infer_expr(left, fallback_span);
+                            let r_ty = self.infer_expr(right, fallback_span);
 
-                if l_ty == Type::Unknown || r_ty == Type::Unknown {
-                    return Type::Unknown;
-                }
+                            if l_ty == Type::Unknown || r_ty == Type::Unknown {
+                                return Type::Unknown;
+                            }
 
-                if op == "+" || op == "-" || op == "*" || op == "/" {
-                    if l_ty != Type::Number || r_ty != Type::Number {
-                        self.errors.push(StaticCheckError::new(
-                            "类型错误",
-                            format!(
-                                "操作符 '{}' 只能用于两个数字，但得到了 '{}' 和 '{}'",
-                                op, l_ty, r_ty
-                            ),
-                            fallback_span.clone(),
-                        ));
-                        return Type::Unknown;
-                    }
-                    return Type::Number;
-                }
-                Type::Unknown
-            }
+                            if op == "+" || op == "-" || op == "*" || op == "/" {
+                                if l_ty != Type::Number || r_ty != Type::Number {
+                                    self.errors.push(StaticCheckError::new(
+                                        "类型错误",
+                                        format!("操作符 '{}' 只能用于两个数字，但得到了 '{}' 和 '{}'", op, l_ty, r_ty),
+                                        fallback_span.clone(),
+                                    ));
+                                    return Type::Unknown;
+                                }
+                                return Type::Number;
+                            }
+                            else if op == "==" || op == "!=" {
+                                if l_ty != r_ty {
+                                    self.errors.push(StaticCheckError::new(
+                                        "类型不匹配",
+                                        format!("无法比较 '{}' 和 '{}'", l_ty, r_ty),
+                                        fallback_span.clone(),
+                                    ));
+                                    return Type::Unknown;
+                                }
+                                return Type::Bool;
+                            }
+                            else if op == "<" || op == ">" || op == "<=" || op == ">=" {
+                                if l_ty != Type::Number || r_ty != Type::Number {
+                                    self.errors.push(StaticCheckError::new(
+                                        "类型错误",
+                                        format!("操作符 '{}' 只能用于两个数字，但得到了 '{}' 和 '{}'", op, l_ty, r_ty),
+                                        fallback_span.clone(),
+                                    ));
+                                    return Type::Unknown;
+                                }
+                                return Type::Bool;
+                            }
+                            Type::Unknown
+                        }
             Expr::Call { target, args } => {
                 let target_ty = self.infer_expr(target, fallback_span);
 

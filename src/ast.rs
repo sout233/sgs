@@ -94,6 +94,13 @@ pub enum Stmt {
     ImplicitReturn(Expr),
     /// 块语句
     Block(Vec<Spanned<Stmt>>),
+    /// if 语句罢了
+    If {
+        condition: Expr,
+        then_branch: Vec<Spanned<Stmt>>,
+        /// 里面可能是 else if 或者 else什么的
+        else_branch: Option<Box<Spanned<Stmt>>>,
+    },
 }
 
 /// 赋值语句
@@ -119,7 +126,7 @@ pub enum Expr {
     /// 闭包
     Closure {
         params: Vec<FnParam>,
-        body: Vec<Spanned<Stmt>>
+        body: Vec<Spanned<Stmt>>,
     },
     /// 函数调用
     Call {
@@ -132,4 +139,6 @@ pub enum Expr {
         op: String,
         right: Box<Expr>,
     },
+    /// bool罢了
+    Bool(bool),
 }

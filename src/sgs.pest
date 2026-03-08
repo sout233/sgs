@@ -7,15 +7,12 @@ ident        = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 number       = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 string_lit   = ${ "\"" ~ inner_string ~ "\"" }
 interp_string = ${ "$" ~ "\"" ~ interp_part* ~ "\"" }
-// interp_part 是内部的纯文本或 {} 表达式
 interp_part   = _{ interp_text | "{" ~ interp_expr ~ "}" }
-// 匹配除引号和 { 之外的所有字符
 interp_text   = @{ (!("\"" | "{") ~ ANY)+ }
 interp_expr   = !{ expr }
 inner_string = @{ (!"\"" ~ ANY)* }
 semicolon    =  { ";" }
 
-// type
 type_name = {
     ("func" ~ "(" ~ (type_name ~ ("," ~ type_name)*)? ~ ")" ~ "->" ~ type_name)
   | ident
@@ -30,7 +27,6 @@ require_stmt = { "require" ~ is_mut? ~ ident ~ semicolon }
 
 is_mut = { "mut" }
 
-// 函数参数规则
 fn_param  = { ident ~ ":" ~ type_name }
 fn_params = { (fn_param ~ ("," ~ fn_param)*)? }
 
@@ -38,10 +34,12 @@ fn_stmt   = { "fn" ~ ident ~ "(" ~ fn_params ~ ")" ~ return_ty? ~ block }
 return_ty = { "->" ~ type_name }
 
 block = { "{" ~ block_stmt* ~ expr? ~ "}" }
-block_stmt = { block | return_stmt | let_stmt | assign_stmt | expr_stmt }
+
+block_stmt = { block | if_stmt | return_stmt | let_stmt | assign_stmt | expr_stmt }
 return_stmt = { "return" ~ expr? ~ semicolon }
 
-// 语句级规则
+if_stmt = { "if" ~ expr ~ block ~ ("else" ~ (if_stmt | block))? }
+
 let_stmt = { "let" ~ is_mut? ~ ident ~ "=" ~ expr ~ semicolon }
 assign_stmt = { path ~ assign_op ~ expr ~ semicolon }
 expr_stmt   = { expr ~ semicolon }
@@ -49,11 +47,15 @@ assign_op   = { "+=" | "-=" | "*=" | "/=" | "=" }
 
 path = { ident ~ ("." ~ ident)* }
 
-// 表达式
-expr   = { term ~ (add_op ~ term)* }
-term   = { factor ~ (mul_op ~ factor)* }
-factor = { closure | call | interp_string | string_lit | number | path | "(" ~ expr ~ ")" }
+bool_lit = { "true" | "false" }
 
+expr      = { math_expr ~ (comp_op ~ math_expr)* }
+math_expr = { term ~ (add_op ~ term)* }
+term      = { factor ~ (mul_op ~ factor)* }
+
+factor = { closure | call | interp_string | string_lit | bool_lit | number | path | "(" ~ expr ~ ")" }
+
+comp_op = { "==" | "!=" | "<=" | ">=" | "<" | ">" }
 add_op = { "+" | "-" }
 mul_op = { "*" | "/" }
 

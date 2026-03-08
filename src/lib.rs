@@ -5,9 +5,11 @@
 //! and systems (ECS) within a game engine.
 //!
 
+// lib.rs
+
+pub mod analyzer;
 pub mod ast;
 pub mod interpreter;
-pub mod analyzer;
 
 use ast::*;
 use pest::Parser;
@@ -215,13 +217,41 @@ fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Spanned<Stmt> {
                 }
             }
         }
-        Rule::block => {
-            Spanned {
-                node: Stmt::Block(parse_block(inner)),
-                span: byte_range,
-            }
+        Rule::block => Spanned {
+            node: Stmt::Block(parse_block(inner)),
+            span: byte_range,
+        },
+        Rule::if_stmt => Spanned {
+            node: parse_if_internal(inner.into_inner()),
+            span: byte_range,
         },
         _ => unreachable!(),
+    }
+}
+
+fn parse_if_internal(mut parts: pest::iterators::Pairs<Rule>) -> Stmt {
+    let condition = parse_expr(parts.next().unwrap());
+    let then_branch = parse_block(parts.next().unwrap());
+
+    let else_branch = parts.next().map(|else_pair| {
+        let span = else_pair.as_span();
+        let byte_range = span.start()..span.end();
+
+        let node = match else_pair.as_rule() {
+            Rule::if_stmt => parse_if_internal(else_pair.into_inner()),
+            Rule::block => Stmt::Block(parse_block(else_pair)),
+            _ => unreachable!(),
+        };
+        Box::new(Spanned {
+            node,
+            span: byte_range,
+        })
+    });
+
+    Stmt::If {
+        condition,
+        then_branch,
+        else_branch,
     }
 }
 
@@ -229,13 +259,11 @@ fn parse_expr(pair: pest::iterators::Pair<Rule>) -> Expr {
     match pair.as_rule() {
         Rule::expr => {
             let mut inner = pair.into_inner();
-            // 获取左值第一项
-            let mut left = parse_term(inner.next().unwrap());
+            let mut left = parse_math_expr(inner.next().unwrap());
 
-            // 组合后方的算子符号
             while let Some(op_pair) = inner.next() {
                 let op = op_pair.as_str().to_string();
-                let right = parse_term(inner.next().unwrap());
+                let right = parse_math_expr(inner.next().unwrap());
                 left = Expr::BinaryOp {
                     left: Box::new(left),
                     op,
@@ -244,15 +272,31 @@ fn parse_expr(pair: pest::iterators::Pair<Rule>) -> Expr {
             }
             left
         }
+        Rule::math_expr => parse_math_expr(pair),
         Rule::term => parse_term(pair),
         Rule::factor => parse_factor(pair),
         _ => unreachable!("parse_expr 爆了: {:?}", pair.as_rule()),
     }
 }
 
+fn parse_math_expr(pair: pest::iterators::Pair<Rule>) -> Expr {
+    let mut inner = pair.into_inner();
+    let mut left = parse_term(inner.next().unwrap());
+
+    while let Some(op_pair) = inner.next() {
+        let op = op_pair.as_str().to_string();
+        let right = parse_term(inner.next().unwrap());
+        left = Expr::BinaryOp {
+            left: Box::new(left),
+            op,
+            right: Box::new(right),
+        };
+    }
+    left
+}
+
 fn parse_term(pair: pest::iterators::Pair<Rule>) -> Expr {
     let mut inner = pair.into_inner();
-    // 依旧左值第一项
     let mut left = parse_factor(inner.next().unwrap());
 
     while let Some(op_pair) = inner.next() {
@@ -268,23 +312,21 @@ fn parse_term(pair: pest::iterators::Pair<Rule>) -> Expr {
 }
 
 fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
-    // 真的要用unwrap吗。？
     let inner = pair.into_inner().next().unwrap();
 
     match inner.as_rule() {
         Rule::number => Expr::Number(inner.as_str().parse().unwrap()),
+        Rule::bool_lit => Expr::Bool(inner.as_str() == "true"), // 🌟 捕获布尔字面量
         Rule::string_lit => {
             Expr::StringLit(inner.into_inner().next().unwrap().as_str().to_string())
         }
         Rule::path => Expr::Path(inner.into_inner().map(|i| i.as_str().to_string()).collect()),
         Rule::closure => {
-                    let mut closure_inner = inner.into_inner();
-                    let params = parse_fn_params(closure_inner.next().unwrap());
-
-                    let body = parse_block(closure_inner.next().unwrap());
-
-                    Expr::Closure { params, body }
-                }
+            let mut closure_inner = inner.into_inner();
+            let params = parse_fn_params(closure_inner.next().unwrap());
+            let body = parse_block(closure_inner.next().unwrap());
+            Expr::Closure { params, body }
+        }
         Rule::call => {
             let mut call_inner = inner.into_inner();
             let path_pair = call_inner.next().unwrap();
@@ -309,7 +351,7 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
             }
             Expr::StringInterp(parts)
         }
-        _ => unreachable!("parse_expr 爆了: {:?}", inner.as_rule()),
+        _ => unreachable!("parse_factor 爆了: {:?}", inner.as_rule()),
     }
 }
 

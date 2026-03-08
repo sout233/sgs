@@ -1,3 +1,5 @@
+// interpreter.rs
+/// 解释器
 use crate::ast::*;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
@@ -16,6 +18,7 @@ pub enum ControlFlow {
 pub enum Value {
     Number(f64),
     String(String),
+    Bool(bool),
     Void,
     Closure {
         params: Vec<String>,
@@ -97,10 +100,10 @@ pub struct Interpreter {
 }
 
 impl Default for Interpreter {
-     fn default() -> Self {
-         Self::new()
-     }
- }
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Interpreter {
     pub fn new() -> Self {
@@ -113,6 +116,7 @@ impl Interpreter {
         match expr {
             Expr::Number(n) => Ok(Value::Number(*n)),
             Expr::StringLit(s) => Ok(Value::String(s.clone())),
+            Expr::Bool(b) => Ok(Value::Bool(*b)),
             Expr::Path(path) => {
                 // TODO: 支持复杂变量路径
                 if path.len() == 1 {
@@ -124,21 +128,58 @@ impl Interpreter {
                 }
             }
             Expr::BinaryOp { left, op, right } => {
-                let left_val = self.eval_expr(left)?;
-                let right_val = self.eval_expr(right)?;
+                let l = self.eval_expr(left)?;
+                let r = self.eval_expr(right)?;
 
-                match (left_val, op.as_str(), right_val) {
-                    (Value::Number(l), "+", Value::Number(r)) => Ok(Value::Number(l + r)),
-                    (Value::Number(l), "-", Value::Number(r)) => Ok(Value::Number(l - r)),
-                    (Value::Number(l), "*", Value::Number(r)) => Ok(Value::Number(l * r)),
-                    (Value::Number(l), "/", Value::Number(r)) => {
-                        if r == 0.0 {
-                            Err("divided by 0".to_string())
+                match op.as_str() {
+                    "+" => {
+                        if let (Value::Number(ln), Value::Number(rn)) = (&l, &r) {
+                            Ok(Value::Number(ln + rn))
                         } else {
-                            Ok(Value::Number(l / r))
+                            Err("加法只能用于数字".to_string())
                         }
                     }
-                    _ => Err(format!("unsupported operation or type mismatch: {}", op)),
+                    "-" => {
+                        if let (Value::Number(ln), Value::Number(rn)) = (&l, &r) {
+                            Ok(Value::Number(ln - rn))
+                        } else {
+                            Err("减法只能用于数字".to_string())
+                        }
+                    }
+                    "*" => {
+                        if let (Value::Number(ln), Value::Number(rn)) = (&l, &r) {
+                            Ok(Value::Number(ln * rn))
+                        } else {
+                            Err("乘法只能用于数字".to_string())
+                        }
+                    }
+                    "/" => {
+                        if let (Value::Number(ln), Value::Number(rn)) = (&l, &r) {
+                            if *rn == 0.0 {
+                                return Err("divided by 0".to_string());
+                            }
+                            Ok(Value::Number(ln / rn))
+                        } else {
+                            Err("除法只能用于数字".to_string())
+                        }
+                    }
+                    "==" => Ok(Value::Bool(l == r)),
+                    "!=" => Ok(Value::Bool(l != r)),
+                    "<" | ">" | "<=" | ">=" => {
+                        if let (Value::Number(ln), Value::Number(rn)) = (&l, &r) {
+                            let res = match op.as_str() {
+                                "<" => ln < rn,
+                                ">" => ln > rn,
+                                "<=" => ln <= rn,
+                                ">=" => ln >= rn,
+                                _ => unreachable!(),
+                            };
+                            Ok(Value::Bool(res))
+                        } else {
+                            Err("关系运算符只能用于数字".to_string())
+                        }
+                    }
+                    _ => Err(format!("unsupported operation: {}", op)),
                 }
             }
             Expr::Call { target, args } => {
@@ -152,6 +193,7 @@ impl Interpreter {
                         match val {
                             Value::Number(n) => outputs.push(n.to_string()),
                             Value::String(s) => outputs.push(s),
+                            Value::Bool(b) => outputs.push(b.to_string()),
                             Value::Closure { .. } => outputs.push("<closure>".to_string()),
                             Value::Void => outputs.push("void".to_string()),
                         }
@@ -208,6 +250,7 @@ impl Interpreter {
                     match val {
                         Value::Number(n) => result_str.push_str(&n.to_string()),
                         Value::String(s) => result_str.push_str(&s),
+                        Value::Bool(b) => result_str.push_str(&b.to_string()),
                         Value::Void => result_str.push_str("void"),
                         Value::Closure { .. } => result_str.push_str("<closure>"),
                     }
@@ -271,6 +314,35 @@ impl Interpreter {
             Stmt::Expr(expr) => {
                 self.eval_expr(expr).map_err(attach_span)?;
                 Ok(ControlFlow::None)
+            }
+            Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let cond_val = self.eval_expr(condition).map_err(attach_span)?;
+
+                let is_true = match cond_val {
+                    Value::Bool(b) => b,
+                    _ => return Err(("if 的条件必须是布尔值".to_string(), stmt.span.clone())),
+                };
+
+                if is_true {
+                    self.env.push_scope();
+                    let mut res = ControlFlow::None;
+                    for s in then_branch {
+                        res = self.eval_stmt(s)?;
+                        if matches!(res, ControlFlow::Return(_)) {
+                            break;
+                        }
+                    }
+                    self.env.pop_scope();
+                    Ok(res)
+                } else if let Some(else_b) = else_branch {
+                    self.eval_stmt(else_b)
+                } else {
+                    Ok(ControlFlow::None)
+                }
             }
             Stmt::Return(Some(expr)) => {
                 let val = self.eval_expr(expr).map_err(attach_span)?;

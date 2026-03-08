@@ -1,3 +1,5 @@
+/// 可能是运行时，可以运行一个sgs文件
+// main.rs
 use sgs::interpreter::Interpreter;
 use sgs::parse_program;
 use sgs::{analyzer::Analyzer, ast::SgsNode};
