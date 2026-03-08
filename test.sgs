@@ -37,5 +37,7 @@ fn main() -> void {
     println("After Damage - HP:", stats[0], "MP:", stats[1]);
     println("stats:", stats);
 
-    // stats[2] = "defense";
+    for hp in stats {
+        println("HP:", hp);
+    }
 }

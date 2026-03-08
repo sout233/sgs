@@ -106,8 +106,16 @@ pub enum Stmt {
         condition: Expr,
         body: Vec<Spanned<Stmt>>,
     },
+    /// break 关键字
     Break,
+    /// continue 关键字
     Continue,
+    /// for 循环
+    For {
+            item_name: String,
+            iterable: Expr,
+            body: Vec<Spanned<Stmt>>,
+        },
 }
 
 /// 赋值语句

@@ -3,15 +3,15 @@ COMMENT    = _{ "//" ~ (!("\n" | "\r") ~ ANY)* }
 
 program = { SOI ~ stmt* ~ EOI }
 
-ident        = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
-number       = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-string_lit   = ${ "\"" ~ inner_string ~ "\"" }
+ident         = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+number        = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+string_lit    = ${ "\"" ~ inner_string ~ "\"" }
 interp_string = ${ "$" ~ "\"" ~ interp_part* ~ "\"" }
 interp_part   = _{ interp_text | "{" ~ interp_expr ~ "}" }
 interp_text   = @{ (!("\"" | "{") ~ ANY)+ }
 interp_expr   = !{ expr }
-inner_string = @{ (!"\"" ~ ANY)* }
-semicolon    =  { ";" }
+inner_string  = @{ (!"\"" ~ ANY)* }
+semicolon     =  { ";" }
 
 type_name = {
     ("func" ~ "(" ~ (type_name ~ ("," ~ type_name)*)? ~ ")" ~ "->" ~ type_name)
@@ -35,28 +35,37 @@ return_ty = { "->" ~ type_name }
 
 block = { "{" ~ block_stmt* ~ expr? ~ "}" }
 
-block_stmt = {
-    block | if_stmt | while_stmt | break_stmt | continue_stmt |
-    return_stmt | let_stmt | assign_stmt | expr_stmt
+block_stmt  = {
+    block
+  | if_stmt
+  | while_stmt
+  | for_stmt
+  | break_stmt
+  | continue_stmt
+  | return_stmt
+  | let_stmt
+  | assign_stmt
+  | expr_stmt
 }
 return_stmt = { "return" ~ expr? ~ semicolon }
 
 if_stmt = { "if" ~ expr ~ block ~ ("else" ~ (if_stmt | block))? }
 
-let_stmt = { "let" ~ is_mut? ~ ident ~ "=" ~ expr ~ semicolon }
+let_stmt    = { "let" ~ is_mut? ~ ident ~ "=" ~ expr ~ semicolon }
 assign_stmt = { path ~ ("[" ~ expr ~ "]")? ~ assign_op ~ expr ~ semicolon }
 expr_stmt   = { expr ~ semicolon }
 assign_op   = { "+=" | "-=" | "*=" | "/=" | "=" }
 
-array_lit = { "[" ~ (expr ~ ("," ~ expr)*)? ~ "]" }
+array_lit    = { "[" ~ (expr ~ ("," ~ expr)*)? ~ "]" }
 index_access = { path ~ "[" ~ expr ~ "]" }
 
 path = { ident ~ ("." ~ ident)* }
 
 bool_lit = { "true" | "false" }
 
-while_stmt = { "while" ~ expr ~ block }
-break_stmt = { "break" ~ semicolon }
+while_stmt    = { "while" ~ expr ~ block }
+for_stmt      = { "for" ~ ident ~ "in" ~ expr ~ block }
+break_stmt    = { "break" ~ semicolon }
 continue_stmt = { "continue" ~ semicolon }
 
 expr      = { math_expr ~ (comp_op ~ math_expr)* }
@@ -66,8 +75,8 @@ term      = { factor ~ (mul_op ~ factor)* }
 factor = { closure | call | index_access | array_lit | interp_string | string_lit | bool_lit | number | path | "(" ~ expr ~ ")" }
 
 comp_op = { "==" | "!=" | "<=" | ">=" | "<" | ">" }
-add_op = { "+" | "-" }
-mul_op = { "*" | "/" }
+add_op  = { "+" | "-" }
+mul_op  = { "*" | "/" }
 
 closure = { "|" ~ fn_params ~ "|" ~ block }
 call    = { path ~ "(" ~ (expr ~ ("," ~ expr)*)? ~ ")" }

@@ -244,6 +244,17 @@ fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Spanned<Stmt> {
                 span: byte_range,
             }
         }
+        Rule::for_stmt => {
+                    let mut parts = inner.into_inner();
+                    let item_name = parts.next().unwrap().as_str().to_string();
+                    let iterable = parse_expr(parts.next().unwrap());
+                    let body = parse_block(parts.next().unwrap());
+
+                    Spanned {
+                        node: Stmt::For { item_name, iterable, body },
+                        span: byte_range,
+                    }
+                }
         Rule::break_stmt => Spanned {
             node: Stmt::Break,
             span: byte_range,

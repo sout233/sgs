@@ -341,6 +341,34 @@ impl Analyzer {
                 self.pop_scope();
                 self.loop_depth -= 1; // 离开循环
             }
+            Stmt::For { item_name, iterable, body } => {
+                            let iter_ty = self.infer_expr(iterable, span);
+
+                            let item_ty = if let Type::Array(inner) = iter_ty {
+                                *inner
+                            } else if iter_ty != Type::Unknown {
+                                self.errors.push(StaticCheckError::new(
+                                    "类型错误",
+                                    format!("'for' 循环只能遍历数组，但得到了 '{}'", iter_ty),
+                                    span.clone(),
+                                ));
+                                Type::Unknown
+                            } else {
+                                Type::Unknown
+                            };
+
+                            self.loop_depth += 1;
+                            self.push_scope();
+
+                            self.define_var(item_name.clone(), false, item_ty, span);
+
+                            for s in body {
+                                self.check_stmt(s);
+                            }
+
+                            self.pop_scope();
+                            self.loop_depth -= 1;
+                        }
             Stmt::Break => {
                 if self.loop_depth == 0 {
                     self.errors.push(StaticCheckError::new(

@@ -500,6 +500,44 @@ impl Interpreter {
                 }
                 Ok(ControlFlow::None)
             }
+            Stmt::For {
+                item_name,
+                iterable,
+                body,
+            } => {
+                let iter_val = self.eval_expr(iterable).map_err(attach_span)?;
+
+                if let Value::Array(arr) = iter_val {
+                    let elements = arr.borrow().clone();
+
+                    for elem in elements {
+                        self.env.push_scope();
+                        self.env.define(item_name.clone(), elem, false);
+
+                        let mut flow = ControlFlow::None;
+                        for s in body {
+                            flow = self.eval_stmt(s)?;
+                            match flow {
+                                ControlFlow::Return(_) => break,
+                                ControlFlow::Break => break,
+                                ControlFlow::Continue => break,
+                                ControlFlow::None => {}
+                            }
+                        }
+                        self.env.pop_scope();
+
+                        match flow {
+                            ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
+                            ControlFlow::Break => break,
+                            ControlFlow::Continue => continue,
+                            ControlFlow::None => {}
+                        }
+                    }
+                    Ok(ControlFlow::None)
+                } else {
+                    Err(("for 循环只能遍历数组".to_string(), stmt.span.clone()))
+                }
+            }
             Stmt::Break => Ok(ControlFlow::Break),
             Stmt::Continue => Ok(ControlFlow::Continue),
         }
