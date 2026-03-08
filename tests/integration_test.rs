@@ -547,3 +547,192 @@ fn test_advanced_expressions_and_interpolation() {
         panic!("预期应该是 SystemDef");
     }
 }
+
+#[test]
+fn test_array_operations() {
+    let script = r#"
+        @type System;
+        @name ArrayTest;
+
+        fn main() -> void {
+            let mut arr = [10, 20, 30];
+
+            let first = arr[0];
+
+            arr[1] += 5;   // 25
+            arr[2] -= 10;  // 20
+            arr[0] = 99;   // 99
+
+            let res0 = arr[0];
+            let res1 = arr[1];
+            let res2 = arr[2];
+        }
+    "#;
+
+    let ast = sgs::parse_program(script).unwrap();
+    let mut vm = sgs::interpreter::Interpreter::new();
+
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        let main_func = sys.functions.iter().find(|f| f.name == "main").unwrap();
+
+        vm.env.push_scope();
+        for stmt in &main_func.statements {
+            let res = vm.eval_stmt(stmt);
+            assert!(res.is_ok(), "数组操作执行失败: {:?}", res.err());
+        }
+
+        assert_eq!(vm.env.get_val("first").unwrap(), sgs::interpreter::Value::Number(10.0));
+        assert_eq!(vm.env.get_val("res0").unwrap(), sgs::interpreter::Value::Number(99.0));
+        assert_eq!(vm.env.get_val("res1").unwrap(), sgs::interpreter::Value::Number(25.0));
+        assert_eq!(vm.env.get_val("res2").unwrap(), sgs::interpreter::Value::Number(20.0));
+    }
+}
+
+#[test]
+fn test_while_loop_with_control_flow() {
+    let script = r#"
+        @type System;
+        @name WhileTest;
+
+        fn main() -> void {
+            let mut i = 0;
+            let mut sum = 0;
+
+            while i < 10 {
+                i += 1;
+
+                if i == 3 {
+                    continue;
+                }
+
+                sum += i;
+
+                if i == 4 {
+                    break; // sum = 1 + 2 + 4 = 7
+                }
+            }
+        }
+    "#;
+
+    let ast = sgs::parse_program(script).unwrap();
+    let mut vm = sgs::interpreter::Interpreter::new();
+
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        let main_func = sys.functions.iter().find(|f| f.name == "main").unwrap();
+
+        vm.env.push_scope();
+        for stmt in &main_func.statements {
+            let res = vm.eval_stmt(stmt);
+            assert!(res.is_ok(), "while 循环执行失败: {:?}", res.err());
+        }
+
+        assert_eq!(vm.env.get_val("i").unwrap(), sgs::interpreter::Value::Number(4.0));
+        assert_eq!(vm.env.get_val("sum").unwrap(), sgs::interpreter::Value::Number(7.0));
+    }
+}
+
+#[test]
+fn test_for_in_loop() {
+    let script = r#"
+        @type System;
+        @name ForTest;
+
+        fn main() -> void {
+            let arr = [10, 20, 30, 40, 50];
+            let mut total = 0;
+
+            for val in arr {
+                if val == 20 {
+                    continue;
+                }
+                if val == 40 {
+                    break;
+                }
+                total += val;
+            }
+        }
+    "#;
+
+    let ast = sgs::parse_program(script).unwrap();
+    let mut vm = sgs::interpreter::Interpreter::new();
+
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        let main_func = sys.functions.iter().find(|f| f.name == "main").unwrap();
+
+        vm.env.push_scope();
+        for stmt in &main_func.statements {
+            let res = vm.eval_stmt(stmt);
+            assert!(res.is_ok(), "for 循环执行失败: {:?}", res.err());
+        }
+
+        assert_eq!(vm.env.get_val("total").unwrap(), sgs::interpreter::Value::Number(40.0));
+        assert_eq!(vm.env.get_val("val"), None);
+    }
+}
+
+#[test]
+fn test_string_concatenation_syntax() {
+    let script = r#"
+        @type System;
+        @name ConcatTest;
+
+        fn main() -> void {
+            let mut msg = "Player " ++ "Sout";
+            msg ++= " has joined.";
+            let final_msg = msg ++ " Welcome!";
+        }
+    "#;
+
+    let ast = sgs::parse_program(script).unwrap();
+    let mut vm = sgs::interpreter::Interpreter::new();
+
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        let main_func = sys.functions.iter().find(|f| f.name == "main").unwrap();
+
+        vm.env.push_scope();
+        for stmt in &main_func.statements {
+            let res = vm.eval_stmt(stmt);
+            assert!(res.is_ok(), "字符串拼接执行失败: {:?}", res.err());
+        }
+
+        assert_eq!(
+            vm.env.get_val("msg").unwrap(),
+            sgs::interpreter::Value::String("Player Sout has joined.".into())
+        );
+        assert_eq!(
+            vm.env.get_val("final_msg").unwrap(),
+            sgs::interpreter::Value::String("Player Sout has joined. Welcome!".into())
+        );
+    }
+}
+
+#[test]
+fn test_analyzer_rejects_plus_for_strings() {
+    let script = r#"
+        @type System;
+        @name AnalyzerErrorTest;
+
+        fn main() -> void {
+            let bad_concat = "Hello " + "World";
+        }
+    "#;
+
+    let ast = sgs::parse_program(script).unwrap();
+    let mut analyzer = sgs::analyzer::Analyzer::new();
+
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        analyzer.register_functions(sys);
+        for func in &sys.functions {
+            analyzer.check_function(func);
+        }
+    }
+
+    assert_eq!(analyzer.errors.len(), 1);
+
+    let err = &analyzer.errors[0];
+    assert_eq!(err.title, "操作符错误");
+    assert!(err.message.contains("不能使用 '+' 来操作字符串"));
+
+    let note = err.note.as_ref().unwrap();
+    assert!(note.0.contains("SGS 使用 '++'"));
+}

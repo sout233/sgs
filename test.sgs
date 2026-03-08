@@ -42,4 +42,7 @@ fn main() -> void {
     }
 
     println("IM" ++ "GAY");
+    let mut str = "what is your ";
+    str ++= "name?";
+    println("Final str:", str);
 }

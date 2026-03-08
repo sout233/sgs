@@ -410,6 +410,7 @@ impl Interpreter {
 
                 let new_val = match (current_val, op.as_str(), right_val) {
                     (_, "=", v) => v,
+                    (Value::String(l), "++=", Value::String(r)) => Value::String(format!("{}{}", l, r)),
                     (Value::Number(l), "+=", Value::Number(r)) => Value::Number(l + r),
                     (Value::Number(l), "-=", Value::Number(r)) => Value::Number(l - r),
                     (Value::Number(l), "*=", Value::Number(r)) => Value::Number(l * r),
