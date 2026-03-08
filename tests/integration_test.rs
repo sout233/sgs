@@ -84,7 +84,8 @@ fn test_parse_movement_system() {
                     .map(|s| s.to_string())
                     .collect(),
                 op: "+=".into(),
-                value: Expr::Number(1.0)
+                value: Expr::Number(1.0),
+                index: None
             })
         );
     } else {
@@ -200,7 +201,12 @@ fn test_calculation_parsing() {
 
         assert_eq!(func.statements.len(), 5);
 
-        if let Stmt::Let { is_mut, name, value } = &func.statements[0].node {
+        if let Stmt::Let {
+            is_mut,
+            name,
+            value,
+        } = &func.statements[0].node
+        {
             assert_eq!(name, "base_val");
             assert!(!*is_mut);
             assert_eq!(*value, Expr::Number(100.0));
@@ -208,31 +214,58 @@ fn test_calculation_parsing() {
             panic!("应是let");
         }
 
-        if let Stmt::Assign(AssignStmt { target_path, op, value }) = &func.statements[1].node {
+        if let Stmt::Assign(AssignStmt {
+            target_path,
+            op,
+            value,
+            index,
+        }) = &func.statements[1].node
+        {
             assert_eq!(target_path, &vec!["Player", "hp"]);
             assert_eq!(op, "+=");
             assert_eq!(*value, Expr::Number(50.0));
+            assert!(index.is_none());
         } else {
             panic!("应该是+=");
         }
 
-        if let Stmt::Assign(AssignStmt { target_path, op, value }) = &func.statements[2].node {
+        if let Stmt::Assign(AssignStmt {
+            target_path,
+            op,
+            value,
+            index,
+        }) = &func.statements[2].node
+        {
             assert_eq!(op, "-=");
             assert_eq!(*value, Expr::Number(20.0));
+            assert!(index.is_none());
         } else {
             panic!("应当是-=");
         }
 
-        if let Stmt::Assign(AssignStmt { target_path, op, value }) = &func.statements[3].node {
+        if let Stmt::Assign(AssignStmt {
+            target_path,
+            op,
+            value,
+            index,
+        }) = &func.statements[3].node
+        {
             assert_eq!(op, "*=");
             assert_eq!(*value, Expr::Number(2.0));
         } else {
             panic!("应该是 *=");
         }
 
-        if let Stmt::Assign(AssignStmt { target_path, op, value }) = &func.statements[4].node {
+        if let Stmt::Assign(AssignStmt {
+            target_path,
+            op,
+            value,
+            index,
+        }) = &func.statements[4].node
+        {
             assert_eq!(op, "/=");
             assert_eq!(*value, Expr::Number(1.5));
+            assert!(index.is_none());
         } else {
             panic!("应该是 /=");
         }
@@ -257,7 +290,12 @@ fn test_complex_math_expression() {
     if let SgsNode::SystemDef(sys) = &ast[0] {
         let func = &sys.functions[0];
 
-        if let Stmt::Let { is_mut, name, value } = &func.statements[0].node {
+        if let Stmt::Let {
+            is_mut,
+            name,
+            value,
+        } = &func.statements[0].node
+        {
             assert_eq!(name, "result");
             assert!(!*is_mut);
 
@@ -265,11 +303,21 @@ fn test_complex_math_expression() {
                 assert_eq!(op, "+");
                 assert_eq!(**left, Expr::Number(10.0));
 
-                if let Expr::BinaryOp { left: mul_left, op: mul_op, right: mul_right } = &**right {
+                if let Expr::BinaryOp {
+                    left: mul_left,
+                    op: mul_op,
+                    right: mul_right,
+                } = &**right
+                {
                     assert_eq!(mul_op, "*");
                     assert_eq!(**mul_left, Expr::Number(5.0));
 
-                    if let Expr::BinaryOp { left: sub_left, op: sub_op, right: sub_right } = &**mul_right {
+                    if let Expr::BinaryOp {
+                        left: sub_left,
+                        op: sub_op,
+                        right: sub_right,
+                    } = &**mul_right
+                    {
                         assert_eq!(sub_op, "-");
                         assert_eq!(**sub_left, Expr::Number(2.0));
                         assert_eq!(
@@ -321,17 +369,29 @@ fn test_interpreter_math_execution() {
 
         for stmt in &func.statements {
             let result = vm.eval_stmt(stmt);
-            assert!(result.is_ok(), "计算测试已经爆炸，亿万代码必须重写: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "计算测试已经爆炸，亿万代码必须重写: {:?}",
+                result.err()
+            );
         }
 
-        assert_eq!(vm.env.get_val("base").unwrap(), sgs::interpreter::Value::Number(10.0));
-        assert_eq!(vm.env.get_val("offset").unwrap(), sgs::interpreter::Value::Number(6.0));
-        assert_eq!(vm.env.get_val("total").unwrap(), sgs::interpreter::Value::Number(50.0));
+        assert_eq!(
+            vm.env.get_val("base").unwrap(),
+            sgs::interpreter::Value::Number(10.0)
+        );
+        assert_eq!(
+            vm.env.get_val("offset").unwrap(),
+            sgs::interpreter::Value::Number(6.0)
+        );
+        assert_eq!(
+            vm.env.get_val("total").unwrap(),
+            sgs::interpreter::Value::Number(50.0)
+        );
 
         vm.env.pop_scope();
 
         assert_eq!(vm.env.get_val("total"), None);
-
     } else {
         panic!("预期应该是SystemDef");
     }
@@ -376,7 +436,10 @@ fn test_mutability_and_closure_scope() {
 
         let err = vm.env.set("constant_val", Value::Number(999.0));
         assert!(err.is_err());
-        assert_eq!(err.unwrap_err(), "不可变变量 'constant_val' 无法被重新赋值，请使用 let mut 声明");
+        assert_eq!(
+            err.unwrap_err(),
+            "不可变变量 'constant_val' 无法被重新赋值，请使用 let mut 声明"
+        );
 
         assert_eq!(vm.env.get_val("local_var"), None);
 
@@ -384,7 +447,6 @@ fn test_mutability_and_closure_scope() {
 
         assert_eq!(vm.env.get_val("x"), None);
         assert_eq!(vm.env.get_val("constant_val"), None);
-
     } else {
         panic!("应该是 SystemDef");
     }

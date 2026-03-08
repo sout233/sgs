@@ -12,6 +12,8 @@ pub struct Variable {
 pub enum ControlFlow {
     None,
     Return(Value),
+    Break,
+    Continue,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -20,11 +22,35 @@ pub enum Value {
     String(String),
     Bool(bool),
     Void,
+    Array(Rc<RefCell<Vec<Value>>>),
     Closure {
         params: Vec<String>,
         body: Vec<Spanned<Stmt>>,
         captured_env: Vec<HashMap<String, Rc<RefCell<Variable>>>>,
     },
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Number(n) => write!(f, "{}", n),
+            Value::String(s) => write!(f, "{}", s),
+            Value::Bool(b) => write!(f, "{}", b),
+            Value::Void => write!(f, "void"),
+            Value::Closure { .. } => write!(f, "<closure>"),
+            Value::Array(arr) => {
+                write!(f, "[")?;
+                let elements = arr.borrow();
+                for (i, val) in elements.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", val)?;
+                }
+                write!(f, "]")
+            }
+        }
+    }
 }
 
 pub struct Environment {
@@ -182,6 +208,41 @@ impl Interpreter {
                     _ => Err(format!("unsupported operation: {}", op)),
                 }
             }
+            Expr::Array(elements) => {
+                let mut arr = Vec::new();
+                for el in elements {
+                    arr.push(self.eval_expr(el)?);
+                }
+                Ok(Value::Array(Rc::new(RefCell::new(arr))))
+            }
+            // ... 在 eval_expr 中 ...
+            Expr::Index { target, index } => {
+                let target_val = self.eval_expr(target)?;
+                let index_val = self.eval_expr(index)?;
+
+                if let Value::Number(n) = index_val {
+                    if n < 0.0 || n.fract() != 0.0 {
+                        return Err("数组索引必须是正整数".to_string());
+                    }
+                    let idx = n as usize;
+
+                    if let Value::Array(arr) = target_val {
+                        let arr_ref = arr.borrow();
+                        if idx >= arr_ref.len() {
+                            return Err(format!(
+                                "索引越界：数组长度为 {}，但尝试访问 {}",
+                                arr_ref.len(),
+                                idx
+                            ));
+                        }
+                        Ok(arr_ref[idx].clone())
+                    } else {
+                        Err("试图对非数组进行索引访问".to_string())
+                    }
+                } else {
+                    Err("数组索引必须是数字".to_string())
+                }
+            }
             Expr::Call { target, args } => {
                 if let Expr::Path(path) = &**target
                     && path.len() == 1
@@ -190,13 +251,7 @@ impl Interpreter {
                     let mut outputs = Vec::new();
                     for arg in args {
                         let val = self.eval_expr(arg)?;
-                        match val {
-                            Value::Number(n) => outputs.push(n.to_string()),
-                            Value::String(s) => outputs.push(s),
-                            Value::Bool(b) => outputs.push(b.to_string()),
-                            Value::Closure { .. } => outputs.push("<closure>".to_string()),
-                            Value::Void => outputs.push("void".to_string()),
-                        }
+                        outputs.push(val.to_string());
                     }
                     println!("{}", outputs.join(" "));
                     return Ok(Value::Void);
@@ -247,13 +302,7 @@ impl Interpreter {
                 let mut result_str = String::new();
                 for part in parts {
                     let val = self.eval_expr(part)?;
-                    match val {
-                        Value::Number(n) => result_str.push_str(&n.to_string()),
-                        Value::String(s) => result_str.push_str(&s),
-                        Value::Bool(b) => result_str.push_str(&b.to_string()),
-                        Value::Void => result_str.push_str("void"),
-                        Value::Closure { .. } => result_str.push_str("<closure>"),
-                    }
+                    result_str.push_str(&val.to_string());
                 }
                 Ok(Value::String(result_str))
             }
@@ -278,6 +327,7 @@ impl Interpreter {
                 target_path,
                 op,
                 value,
+                index,
             }) => {
                 let right_val = self.eval_expr(value).map_err(attach_span)?;
                 let name = &target_path[0];
@@ -292,6 +342,53 @@ impl Interpreter {
                         format!("不可变变量 '{}' 无法被重新赋值", name),
                         stmt.span.clone(),
                     ));
+                }
+
+                if let Some(idx_expr) = index {
+                    let idx_val = self.eval_expr(idx_expr).map_err(attach_span)?;
+                    let idx = if let Value::Number(n) = idx_val {
+                        if n < 0.0 || n.fract() != 0.0 {
+                            return Err(("数组索引必须是正整数".into(), stmt.span.clone()));
+                        }
+                        n as usize
+                    } else {
+                        return Err(("数组索引必须是数字".into(), stmt.span.clone()));
+                    };
+
+                    if let Value::Array(arr) = current_val {
+                        let mut arr_ref = arr.borrow_mut();
+                        if idx >= arr_ref.len() {
+                            return Err((
+                                format!("索引越界：长度 {}, 访问 {}", arr_ref.len(), idx),
+                                stmt.span.clone(),
+                            ));
+                        }
+
+                        let elem_val = arr_ref[idx].clone();
+                        let new_val = match (elem_val, op.as_str(), right_val) {
+                            (_, "=", v) => v,
+                            (Value::Number(l), "+=", Value::Number(r)) => Value::Number(l + r),
+                            (Value::Number(l), "-=", Value::Number(r)) => Value::Number(l - r),
+                            (Value::Number(l), "*=", Value::Number(r)) => Value::Number(l * r),
+                            (Value::Number(l), "/=", Value::Number(r)) => {
+                                if r == 0.0 {
+                                    return Err(("除数不能为0".to_string(), stmt.span.clone()));
+                                }
+                                Value::Number(l / r)
+                            }
+                            _ => {
+                                return Err((
+                                    "无效的赋值操作或类型不匹配".to_string(),
+                                    stmt.span.clone(),
+                                ));
+                            }
+                        };
+
+                        arr_ref[idx] = new_val;
+                        return Ok(ControlFlow::None);
+                    } else {
+                        return Err(("不能对非数组进行索引赋值".into(), stmt.span.clone()));
+                    }
                 }
 
                 let new_val = match (current_val, op.as_str(), right_val) {
@@ -359,14 +456,52 @@ impl Interpreter {
 
                 for s in stmts {
                     res = self.eval_stmt(s)?;
-                    if matches!(res, ControlFlow::Return(_)) {
+                    if !matches!(res, ControlFlow::None) {
                         break;
                     }
                 }
 
                 self.env.pop_scope();
-                Ok(res) // 把控制流抛给外层
+                Ok(res)
             }
+            Stmt::While { condition, body } => {
+                loop {
+                    let cond_val = self.eval_expr(condition).map_err(attach_span)?;
+                    let is_true = match cond_val {
+                        Value::Bool(b) => b,
+                        _ => return Err(("while 条件必须是布尔值".to_string(), stmt.span.clone())),
+                    };
+
+                    if !is_true {
+                        break; // 结束循环
+                    }
+
+                    self.env.push_scope();
+                    let mut flow = ControlFlow::None;
+
+                    for s in body {
+                        flow = self.eval_stmt(s)?;
+
+                        match flow {
+                            ControlFlow::Return(_) => break,
+                            ControlFlow::Break => break,
+                            ControlFlow::Continue => break,
+                            ControlFlow::None => {}
+                        }
+                    }
+                    self.env.pop_scope();
+
+                    match flow {
+                        ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
+                        ControlFlow::Break => break,
+                        ControlFlow::Continue => continue,
+                        ControlFlow::None => {}
+                    }
+                }
+                Ok(ControlFlow::None)
+            }
+            Stmt::Break => Ok(ControlFlow::Break),
+            Stmt::Continue => Ok(ControlFlow::Continue),
         }
     }
 
@@ -383,6 +518,8 @@ impl Interpreter {
             match self.eval_stmt(stmt)? {
                 ControlFlow::Return(val) => return Ok(val),
                 ControlFlow::None => continue,
+                ControlFlow::Break => break,
+                ControlFlow::Continue => continue,
             }
         }
         Ok(Value::Void)

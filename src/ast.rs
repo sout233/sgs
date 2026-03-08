@@ -101,6 +101,13 @@ pub enum Stmt {
         /// 里面可能是 else if 或者 else什么的
         else_branch: Option<Box<Spanned<Stmt>>>,
     },
+    /// while 语句
+    While {
+        condition: Expr,
+        body: Vec<Spanned<Stmt>>,
+    },
+    Break,
+    Continue,
 }
 
 /// 赋值语句
@@ -108,6 +115,8 @@ pub enum Stmt {
 pub struct AssignStmt {
     /// 左值的路径
     pub target_path: Vec<String>,
+    /// 可选的索引下标
+    pub index: Option<Expr>,
     /// 运算符
     pub op: String,
     /// 右值的表达式
@@ -141,4 +150,11 @@ pub enum Expr {
     },
     /// bool罢了
     Bool(bool),
+    /// 数组字面量
+    Array(Vec<Expr>),
+    /// 索引读取
+    Index {
+        target: Box<Expr>,
+        index: Box<Expr>,
+    },
 }

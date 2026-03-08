@@ -186,11 +186,21 @@ fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Spanned<Stmt> {
                 .into_inner()
                 .map(|i| i.as_str().to_string())
                 .collect();
-            let op = parts.next().unwrap().as_str().to_string();
+
+            let mut next_pair = parts.next().unwrap();
+            let mut index = None;
+            if next_pair.as_rule() == Rule::expr {
+                index = Some(parse_expr(next_pair));
+                next_pair = parts.next().unwrap();
+            }
+
+            let op = next_pair.as_str().to_string();
             let value = parse_expr(parts.next().unwrap());
+
             Spanned {
                 node: Stmt::Assign(AssignStmt {
                     target_path,
+                    index,
                     op,
                     value,
                 }),
@@ -223,6 +233,23 @@ fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Spanned<Stmt> {
         },
         Rule::if_stmt => Spanned {
             node: parse_if_internal(inner.into_inner()),
+            span: byte_range,
+        },
+        Rule::while_stmt => {
+            let mut parts = inner.into_inner();
+            let condition = parse_expr(parts.next().unwrap());
+            let body = parse_block(parts.next().unwrap());
+            Spanned {
+                node: Stmt::While { condition, body },
+                span: byte_range,
+            }
+        }
+        Rule::break_stmt => Spanned {
+            node: Stmt::Break,
+            span: byte_range,
+        },
+        Rule::continue_stmt => Spanned {
+            node: Stmt::Continue,
             span: byte_range,
         },
         _ => unreachable!(),
@@ -316,7 +343,7 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
 
     match inner.as_rule() {
         Rule::number => Expr::Number(inner.as_str().parse().unwrap()),
-        Rule::bool_lit => Expr::Bool(inner.as_str() == "true"), // 🌟 捕获布尔字面量
+        Rule::bool_lit => Expr::Bool(inner.as_str() == "true"),
         Rule::string_lit => {
             Expr::StringLit(inner.into_inner().next().unwrap().as_str().to_string())
         }
@@ -351,6 +378,19 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
             }
             Expr::StringInterp(parts)
         }
+                Rule::array_lit => {
+                    let elements = inner.into_inner().map(parse_expr).collect();
+                    Expr::Array(elements)
+                }
+                Rule::index_access => {
+                    let mut inner_parts = inner.into_inner();
+                    let path = Expr::Path(inner_parts.next().unwrap().into_inner().map(|i| i.as_str().to_string()).collect());
+                    let index = parse_expr(inner_parts.next().unwrap());
+                    Expr::Index {
+                        target: Box::new(path),
+                        index: Box::new(index),
+                    }
+                }
         _ => unreachable!("parse_factor 爆了: {:?}", inner.as_rule()),
     }
 }

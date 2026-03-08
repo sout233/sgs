@@ -9,6 +9,7 @@ pub enum Type {
     Void,
     Bool,
     Function { params: Vec<Type>, ret: Box<Type> },
+    Array(Box<Type>),
     Unknown,
     Any,
 }
@@ -32,6 +33,7 @@ impl std::fmt::Display for Type {
             Type::String => write!(f, "string"),
             Type::Void => write!(f, "void"),
             Type::Bool => write!(f, "bool"),
+            Type::Array(inner) => write!(f, "{}[]", inner),
             Type::Unknown => write!(f, "unknown"),
             Type::Any => write!(f, "any"),
 
@@ -84,6 +86,7 @@ pub struct Analyzer {
     scopes: Vec<HashMap<String, Symbol>>,
     pub errors: Vec<StaticCheckError>,
     current_return_ty: Option<Type>,
+    loop_depth: usize,
 }
 
 impl Default for Analyzer {
@@ -98,6 +101,7 @@ impl Analyzer {
             scopes: vec![HashMap::new()],
             errors: Vec::new(),
             current_return_ty: None,
+            loop_depth: 0,
         }
     }
 
@@ -200,6 +204,7 @@ impl Analyzer {
                 target_path,
                 op: _,
                 value,
+                index,
             }) => {
                 let rhs_ty = self.infer_expr(value, span);
                 let name = &target_path[0];
@@ -224,15 +229,41 @@ impl Analyzer {
                             );
                         }
 
-                        if expected_ty != Type::Unknown
+                        let actual_target_ty = if let Some(idx_expr) = index {
+                            let idx_ty = self.infer_expr(idx_expr, span);
+                            if idx_ty != Type::Unknown && idx_ty != Type::Number {
+                                self.errors.push(StaticCheckError::new(
+                                    "索引错误",
+                                    "数组索引必须是 'number' 类型",
+                                    span.clone(),
+                                ));
+                            }
+
+                            if let Type::Array(inner) = &expected_ty {
+                                *inner.clone()
+                            } else {
+                                if expected_ty != Type::Unknown {
+                                    self.errors.push(StaticCheckError::new(
+                                        "类型错误",
+                                        format!("无法对非数组类型 '{}' 进行索引赋值", expected_ty),
+                                        span.clone(),
+                                    ));
+                                }
+                                Type::Unknown
+                            }
+                        } else {
+                            expected_ty.clone()
+                        };
+
+                        if actual_target_ty != Type::Unknown
                             && rhs_ty != Type::Unknown
-                            && expected_ty != rhs_ty
+                            && actual_target_ty != rhs_ty
                         {
                             self.errors.push(StaticCheckError::new(
                                 "类型不匹配",
                                 format!(
-                                    "试图将 '{}' 赋值给 '{}' 类型的变量 '{}'",
-                                    rhs_ty, expected_ty, name
+                                    "试图将 '{}' 赋值给 '{}' 类型的坑位",
+                                    rhs_ty, actual_target_ty
                                 ),
                                 span.clone(),
                             ));
@@ -292,6 +323,42 @@ impl Analyzer {
                 }
                 self.pop_scope();
             }
+            Stmt::While { condition, body } => {
+                let cond_ty = self.infer_expr(condition, span);
+                if cond_ty != Type::Unknown && cond_ty != Type::Bool {
+                    self.errors.push(StaticCheckError::new(
+                        "条件类型错误",
+                        format!("'while' 的条件必须是 'bool' 类型，但得到了 '{}'", cond_ty),
+                        span.clone(),
+                    ));
+                }
+
+                self.loop_depth += 1;
+                self.push_scope();
+                for s in body {
+                    self.check_stmt(s);
+                }
+                self.pop_scope();
+                self.loop_depth -= 1; // 离开循环
+            }
+            Stmt::Break => {
+                if self.loop_depth == 0 {
+                    self.errors.push(StaticCheckError::new(
+                        "非法控制流",
+                        "'break' 只能在循环体内使用",
+                        span.clone(),
+                    ));
+                }
+            }
+            Stmt::Continue => {
+                if self.loop_depth == 0 {
+                    self.errors.push(StaticCheckError::new(
+                        "非法控制流",
+                        "'continue' 只能在循环体内使用",
+                        span.clone(),
+                    ));
+                }
+            }
         }
     }
 
@@ -337,49 +404,100 @@ impl Analyzer {
                 }
             }
             Expr::Bool(_) => Type::Bool,
+            Expr::Array(elements) => {
+                if elements.is_empty() {
+                    return Type::Array(Box::new(Type::Any));
+                }
+
+                let first_ty = self.infer_expr(&elements[0], fallback_span);
+
+                for item in elements.iter().skip(1) {
+                    let item_ty = self.infer_expr(item, fallback_span);
+                    if item_ty != Type::Unknown && item_ty != first_ty {
+                        self.errors.push(StaticCheckError::new(
+                            "数组类型不一致",
+                            format!(
+                                "数组元素类型必须统一，期待 '{}'，但得到了 '{}'",
+                                first_ty, item_ty
+                            ),
+                            fallback_span.clone(),
+                        ));
+                    }
+                }
+                Type::Array(Box::new(first_ty))
+            }
+            Expr::Index { target, index } => {
+                let target_ty = self.infer_expr(target, fallback_span);
+                let index_ty = self.infer_expr(index, fallback_span);
+
+                if index_ty != Type::Unknown && index_ty != Type::Number {
+                    self.errors.push(StaticCheckError::new(
+                        "索引错误",
+                        "数组的索引必须是 'number' 类型",
+                        fallback_span.clone(),
+                    ));
+                }
+
+                if let Type::Array(inner) = target_ty {
+                    *inner
+                } else if target_ty != Type::Unknown {
+                    self.errors.push(StaticCheckError::new(
+                        "类型错误",
+                        format!("只能对数组类型进行索引访问，但得到了 '{}'", target_ty),
+                        fallback_span.clone(),
+                    ));
+                    Type::Unknown
+                } else {
+                    Type::Unknown
+                }
+            }
             Expr::BinaryOp { left, op, right } => {
-                            let l_ty = self.infer_expr(left, fallback_span);
-                            let r_ty = self.infer_expr(right, fallback_span);
+                let l_ty = self.infer_expr(left, fallback_span);
+                let r_ty = self.infer_expr(right, fallback_span);
 
-                            if l_ty == Type::Unknown || r_ty == Type::Unknown {
-                                return Type::Unknown;
-                            }
+                if l_ty == Type::Unknown || r_ty == Type::Unknown {
+                    return Type::Unknown;
+                }
 
-                            if op == "+" || op == "-" || op == "*" || op == "/" {
-                                if l_ty != Type::Number || r_ty != Type::Number {
-                                    self.errors.push(StaticCheckError::new(
-                                        "类型错误",
-                                        format!("操作符 '{}' 只能用于两个数字，但得到了 '{}' 和 '{}'", op, l_ty, r_ty),
-                                        fallback_span.clone(),
-                                    ));
-                                    return Type::Unknown;
-                                }
-                                return Type::Number;
-                            }
-                            else if op == "==" || op == "!=" {
-                                if l_ty != r_ty {
-                                    self.errors.push(StaticCheckError::new(
-                                        "类型不匹配",
-                                        format!("无法比较 '{}' 和 '{}'", l_ty, r_ty),
-                                        fallback_span.clone(),
-                                    ));
-                                    return Type::Unknown;
-                                }
-                                return Type::Bool;
-                            }
-                            else if op == "<" || op == ">" || op == "<=" || op == ">=" {
-                                if l_ty != Type::Number || r_ty != Type::Number {
-                                    self.errors.push(StaticCheckError::new(
-                                        "类型错误",
-                                        format!("操作符 '{}' 只能用于两个数字，但得到了 '{}' 和 '{}'", op, l_ty, r_ty),
-                                        fallback_span.clone(),
-                                    ));
-                                    return Type::Unknown;
-                                }
-                                return Type::Bool;
-                            }
-                            Type::Unknown
-                        }
+                if op == "+" || op == "-" || op == "*" || op == "/" {
+                    if l_ty != Type::Number || r_ty != Type::Number {
+                        self.errors.push(StaticCheckError::new(
+                            "类型错误",
+                            format!(
+                                "首先 '{}' 只能用于两个数字，但这里是 '{}' 和 '{}'",
+                                op, l_ty, r_ty
+                            ),
+                            fallback_span.clone(),
+                        ));
+                        return Type::Unknown;
+                    }
+                    return Type::Number;
+                } else if op == "==" || op == "!=" {
+                    if l_ty != r_ty {
+                        self.errors.push(StaticCheckError::new(
+                            "类型不匹配",
+                            format!("无法比较 '{}' 和 '{}'", l_ty, r_ty),
+                            fallback_span.clone(),
+                        ));
+                        return Type::Unknown;
+                    }
+                    return Type::Bool;
+                } else if op == "<" || op == ">" || op == "<=" || op == ">=" {
+                    if l_ty != Type::Number || r_ty != Type::Number {
+                        self.errors.push(StaticCheckError::new(
+                            "类型错误",
+                            format!(
+                                "操作符 '{}' 只能用于两个数字，但这里写的是 '{}' 和 '{}'",
+                                op, l_ty, r_ty
+                            ),
+                            fallback_span.clone(),
+                        ));
+                        return Type::Unknown;
+                    }
+                    return Type::Bool;
+                }
+                Type::Unknown
+            }
             Expr::Call { target, args } => {
                 let target_ty = self.infer_expr(target, fallback_span);
 
@@ -403,7 +521,7 @@ impl Analyzer {
                             fallback_span.clone(),
                         ));
                     } else {
-                        // 检查每个参数的类型
+                        // 检查参数类型
                         for (i, arg) in args.iter().enumerate() {
                             let arg_ty = self.infer_expr(arg, fallback_span);
                             if arg_ty != Type::Unknown
@@ -413,7 +531,7 @@ impl Analyzer {
                                 self.errors.push(StaticCheckError::new(
                                     "参数类型错误",
                                     format!(
-                                        "第 {} 个参数期待 '{}'，但传入了 '{}'",
+                                        "第 {} 个参数应该是 '{}'，但传入了 '{}'",
                                         i + 1,
                                         params[i],
                                         arg_ty
@@ -427,7 +545,7 @@ impl Analyzer {
                 } else if target_ty != Type::Unknown {
                     self.errors.push(StaticCheckError::new(
                         "调用错误",
-                        format!("试图将 '{}' 类型的变量当作函数调用", target_ty),
+                        format!("为啥要把 '{}' 类型的变量当作函数调用", target_ty),
                         fallback_span.clone(),
                     ));
                 }

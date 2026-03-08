@@ -17,4 +17,25 @@ fn main() -> void {
     }
 
     println("Final a:", a); // world
+
+    let mut a = 0;
+    while a < 10 {
+        println("a:", a);
+        a += 1;
+    }
+
+    println("Final a:", a); // 10
+
+    let mut stats = [100, 50, 20];
+
+    let hp = stats[0];
+    println("Initial HP:", hp);
+
+    stats[0] -= 15;
+    stats[1] += 5;
+
+    println("After Damage - HP:", stats[0], "MP:", stats[1]);
+    println("stats:", stats);
+
+    // stats[2] = "defense";
 }
