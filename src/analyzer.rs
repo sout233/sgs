@@ -37,12 +37,14 @@ impl Type {
 pub struct Symbol {
     pub is_mut: bool,
     pub ty: Type,
+    pub decl_span: Span,
 }
 
 pub struct StaticCheckError {
     pub title: String,
     pub message: String,
     pub span: Span,
+    pub note: Option<(String, Span)>,
 }
 
 impl StaticCheckError {
@@ -51,7 +53,13 @@ impl StaticCheckError {
             title: title.into(),
             message: message.into(),
             span,
+            note: None,
         }
+    }
+
+    pub fn with_note(mut self, msg: impl Into<String>, span: Span) -> Self {
+        self.note = Some((msg.into(), span));
+        self
     }
 }
 
@@ -77,10 +85,16 @@ impl Analyzer {
         self.scopes.pop();
     }
 
-    fn define_var(&mut self, name: String, is_mut: bool, ty: Type, _span: &Span) {
+    fn define_var(&mut self, name: String, is_mut: bool, ty: Type, span: &Span) {
         let current_scope = self.scopes.last_mut().unwrap();
-
-        current_scope.insert(name, Symbol { is_mut, ty });
+        current_scope.insert(
+            name,
+            Symbol {
+                is_mut,
+                ty,
+                decl_span: span.clone(),
+            },
+        );
     }
 
     fn resolve_var(&self, name: &str) -> Option<&Symbol> {
@@ -99,6 +113,7 @@ impl Analyzer {
             Symbol {
                 is_mut: false,
                 ty: Type::Any,
+                decl_span: 0..0,
             },
         );
 
@@ -168,16 +183,21 @@ impl Analyzer {
 
                 let var_info = self
                     .resolve_var(name)
-                    .map(|sym| (sym.is_mut, sym.ty.clone()));
+                    .map(|sym| (sym.is_mut, sym.ty.clone(), sym.decl_span.clone()));
 
                 match var_info {
-                    Some((is_mut, expected_ty)) => {
+                    Some((is_mut, expected_ty, decl_span)) => {
                         if !is_mut {
                             self.errors.push(
-                                StaticCheckError::new("不可变真的可变吗？",
-                                    format!("无法对不可变变量 '{}' 重新赋值。\nNote：在声明时使用 'let mut {} = ...'", name, name),
-                                    span.clone()
+                                StaticCheckError::new(
+                                    "不可变真的可变吗？",
+                                    format!("无法对不可变变量 '{}' 重新赋值。", name),
+                                    span.clone(),
                                 )
+                                .with_note(
+                                    format!("Note：变量 '{}' 在这里被声明为不可变，可尝试改为 let mut {} = ...", name, name),
+                                    decl_span,
+                                ),
                             );
                         }
 

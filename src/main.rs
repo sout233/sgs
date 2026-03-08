@@ -106,41 +106,42 @@ fn main() {
                 let char_end = source[..byte_span.end].chars().count();
                 let char_span = char_start..char_end;
 
-                let msgs: Vec<&str> = msg.split("\n").collect();
                 let mut labels = Vec::new();
-                for msg in &msgs {
-                    let clean_msg = msg.trim();
-                    if clean_msg.is_empty() {
-                        continue;
-                    }
 
-                    let lower_msg = clean_msg.to_lowercase().replace("：", ":");
+                if let Some((note_msg, note_byte_span)) = err.note {
+                    if note_byte_span.start != 0 {
+                        let n_start = source[..note_byte_span.start].chars().count();
+                        let n_end = source[..note_byte_span.end].chars().count();
+                        let n_span = n_start..n_end;
 
-                    if lower_msg.starts_with("error:") {
-                        labels.push(
-                            Label::new((filename, char_span.clone()))
-                                .with_message(clean_msg)
-                                .with_color(Color::Red),
-                        );
-                    } else if lower_msg.starts_with("warning:") {
-                        labels.push(
-                            Label::new((filename, char_span.clone()))
-                                .with_message(clean_msg)
-                                .with_color(Color::Yellow),
-                        );
-                    } else if lower_msg.starts_with("note:") {
-                        labels.push(
-                            Label::new((filename, char_span.clone()))
-                                .with_message(clean_msg)
-                                .with_color(Color::Blue),
-                        );
+                        let primary_label = Label::new((filename, char_span.clone()))
+                            .with_message(msg)
+                            .with_color(Color::Red);
+
+                        let note_label = Label::new((filename, n_span.clone()))
+                            .with_message(note_msg)
+                            .with_color(Color::Blue);
+
+                        if n_start < char_span.start {
+                            labels.push(note_label);
+                            labels.push(primary_label);
+                        } else {
+                            labels.push(primary_label);
+                            labels.push(note_label);
+                        }
                     } else {
                         labels.push(
                             Label::new((filename, char_span.clone()))
-                                .with_message(clean_msg)
+                                .with_message(msg)
                                 .with_color(Color::Red),
                         );
                     }
+                } else {
+                    labels.push(
+                        Label::new((filename, char_span.clone()))
+                            .with_message(msg)
+                            .with_color(Color::Red),
+                    );
                 }
 
                 Report::build(ReportKind::Error, (filename, char_span.clone()))
