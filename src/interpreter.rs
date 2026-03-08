@@ -28,6 +28,12 @@ pub struct Environment {
     pub scopes: Vec<HashMap<String, Rc<RefCell<Variable>>>>,
 }
 
+impl Default for Environment {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Environment {
     pub fn new() -> Self {
         Self {
@@ -90,6 +96,12 @@ pub struct Interpreter {
     pub env: Environment,
 }
 
+impl Default for Interpreter {
+     fn default() -> Self {
+         Self::new()
+     }
+ }
+
 impl Interpreter {
     pub fn new() -> Self {
         Self {
@@ -130,21 +142,22 @@ impl Interpreter {
                 }
             }
             Expr::Call { target, args } => {
-                if let Expr::Path(path) = &**target {
-                    if path.len() == 1 && path[0] == "println" {
-                        let mut outputs = Vec::new();
-                        for arg in args {
-                            let val = self.eval_expr(arg)?;
-                            match val {
-                                Value::Number(n) => outputs.push(n.to_string()),
-                                Value::String(s) => outputs.push(s),
-                                Value::Closure { .. } => outputs.push("<closure>".to_string()),
-                                Value::Void => outputs.push("void".to_string()),
-                            }
+                if let Expr::Path(path) = &**target
+                    && path.len() == 1
+                    && path[0] == "println"
+                {
+                    let mut outputs = Vec::new();
+                    for arg in args {
+                        let val = self.eval_expr(arg)?;
+                        match val {
+                            Value::Number(n) => outputs.push(n.to_string()),
+                            Value::String(s) => outputs.push(s),
+                            Value::Closure { .. } => outputs.push("<closure>".to_string()),
+                            Value::Void => outputs.push("void".to_string()),
                         }
-                        println!("{}", outputs.join(" "));
-                        return Ok(Value::Void);
                     }
+                    println!("{}", outputs.join(" "));
+                    return Ok(Value::Void);
                 }
 
                 let target_val = self.eval_expr(target)?;
@@ -156,7 +169,7 @@ impl Interpreter {
                 } = target_val
                 {
                     if args.len() != params.len() {
-                        return Err(format!("参数数量不匹配"));
+                        return Err("参数数量不匹配".to_string());
                     }
 
                     let mut arg_values = Vec::new();

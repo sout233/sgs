@@ -13,7 +13,7 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_name(s: &str) -> Self {
         match s {
             "number" | "float" => Type::Number,
             "string" => Type::String,
@@ -21,15 +21,29 @@ impl Type {
             _ => Type::Unknown,
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Number => "number".to_string(),
-            Type::String => "string".to_string(),
-            Type::Void => "void".to_string(),
-            Type::Function { .. } => "function".to_string(),
-            Type::Unknown => "unknown".to_string(),
-            Type::Any => "any".to_string(),
+            Type::Number => write!(f, "number"),
+            Type::String => write!(f, "string"),
+            Type::Void => write!(f, "void"),
+            Type::Unknown => write!(f, "unknown"),
+            Type::Any => write!(f, "any"),
+
+            Type::Function { params, ret } => {
+                write!(f, "func(")?;
+
+                for (i, param) in params.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", param)?;
+                }
+
+                write!(f, ") -> {}", ret)
+            }
         }
     }
 }
@@ -67,6 +81,12 @@ pub struct Analyzer {
     scopes: Vec<HashMap<String, Symbol>>,
     pub errors: Vec<StaticCheckError>,
     current_return_ty: Option<Type>,
+}
+
+impl Default for Analyzer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Analyzer {
@@ -120,11 +140,11 @@ impl Analyzer {
         for func in &sys.functions {
             let mut param_types = Vec::new();
             for p in &func.params {
-                param_types.push(Type::from_str(&p.ty));
+                param_types.push(Type::from_name(&p.ty));
             }
 
             let ret_ty = match &func.return_ty {
-                Some(ty_str) => Type::from_str(ty_str),
+                Some(ty_str) => Type::from_name(ty_str),
                 None => Type::Void,
             };
 
@@ -141,7 +161,7 @@ impl Analyzer {
         self.push_scope();
 
         self.current_return_ty = Some(match &func.return_ty {
-            Some(ty_str) => Type::from_str(ty_str),
+            Some(ty_str) => Type::from_name(ty_str),
             None => Type::Void,
         });
 
@@ -149,7 +169,7 @@ impl Analyzer {
             self.define_var(
                 param.name.clone(),
                 false,
-                Type::from_str(&param.ty),
+                Type::from_name(&param.ty),
                 &(0..0),
             );
         }
@@ -209,9 +229,7 @@ impl Analyzer {
                                 "类型不匹配",
                                 format!(
                                     "试图将 '{}' 赋值给 '{}' 类型的变量 '{}'",
-                                    rhs_ty.to_string(),
-                                    expected_ty.to_string(),
-                                    name
+                                    rhs_ty, expected_ty, name
                                 ),
                                 span.clone(),
                             ));
@@ -251,21 +269,19 @@ impl Analyzer {
     }
 
     fn verify_return(&mut self, actual_ty: Type, span: &Span) {
-        if let Some(expected_ty) = &self.current_return_ty {
-            if *expected_ty != Type::Unknown
-                && actual_ty != Type::Unknown
-                && *expected_ty != actual_ty
-            {
-                self.errors.push(StaticCheckError::new(
-                    "返回值类型错误",
-                    format!(
-                        "函数声明返回 '{}'，但实际返回了 '{}'",
-                        expected_ty.to_string(),
-                        actual_ty.to_string()
-                    ),
-                    span.clone(),
-                ));
-            }
+        if let Some(expected_ty) = &self.current_return_ty
+            && *expected_ty != Type::Unknown
+            && actual_ty != Type::Unknown
+            && *expected_ty != actual_ty
+        {
+            self.errors.push(StaticCheckError::new(
+                "返回值类型错误",
+                format!(
+                    "函数声明返回 '{}'，但实际返回了 '{}'",
+                    expected_ty, actual_ty
+                ),
+                span.clone(),
+            ));
         }
     }
 
@@ -301,15 +317,13 @@ impl Analyzer {
                     return Type::Unknown;
                 }
 
-                if (op == "+" || op == "-" || op == "*" || op == "/") {
+                if op == "+" || op == "-" || op == "*" || op == "/" {
                     if l_ty != Type::Number || r_ty != Type::Number {
                         self.errors.push(StaticCheckError::new(
                             "类型错误",
                             format!(
                                 "操作符 '{}' 只能用于两个数字，但得到了 '{}' 和 '{}'",
-                                op,
-                                l_ty.to_string(),
-                                r_ty.to_string()
+                                op, l_ty, r_ty
                             ),
                             fallback_span.clone(),
                         ));
@@ -354,8 +368,8 @@ impl Analyzer {
                                     format!(
                                         "第 {} 个参数期待 '{}'，但传入了 '{}'",
                                         i + 1,
-                                        params[i].to_string(),
-                                        arg_ty.to_string()
+                                        params[i],
+                                        arg_ty
                                     ),
                                     fallback_span.clone(),
                                 ));
@@ -366,7 +380,7 @@ impl Analyzer {
                 } else if target_ty != Type::Unknown {
                     self.errors.push(StaticCheckError::new(
                         "调用错误",
-                        format!("试图将 '{}' 类型的变量当作函数调用", target_ty.to_string()),
+                        format!("试图将 '{}' 类型的变量当作函数调用", target_ty),
                         fallback_span.clone(),
                     ));
                 }

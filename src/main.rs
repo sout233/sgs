@@ -37,16 +37,16 @@ fn main() {
                     let original_len = prefix.len();
                     prefix = prefix.trim_end();
 
-                    if let Some(idx) = prefix.rfind("//") {
-                        if !prefix[idx..].contains('\n') {
-                            prefix = &prefix[..idx].trim_end();
-                        }
+                    if let Some(idx) = prefix.rfind("//")
+                        && !prefix[idx..].contains('\n') {
+                            prefix = prefix[..idx].trim_end();
+
                     }
 
-                    if prefix.ends_with("*/") {
-                        if let Some(idx) = prefix.rfind("/*") {
-                            prefix = &prefix[..idx].trim_end();
-                        }
+                    if prefix.ends_with("*/")
+                        && let Some(idx) = prefix.rfind("/*")
+                    {
+                        prefix = prefix[..idx].trim_end();
                     }
 
                     if prefix.len() == original_len {
