@@ -215,6 +215,12 @@ fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Spanned<Stmt> {
                 }
             }
         }
+        Rule::block => {
+            Spanned {
+                node: Stmt::Block(parse_block(inner)),
+                span: byte_range,
+            }
+        },
         _ => unreachable!(),
     }
 }

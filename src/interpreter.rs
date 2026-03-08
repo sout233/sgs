@@ -206,71 +206,93 @@ impl Interpreter {
 
     // 单条执行
     pub fn eval_stmt(&mut self, stmt: &Spanned<Stmt>) -> Result<ControlFlow, (String, Span)> {
+        let attach_span = |err: String| (err, stmt.span.clone());
 
-            // 定义一个闭包，用来把底层 eval_expr 的纯文本报错，贴上当前语句的 Span
-            let attach_span = |err: String| (err, stmt.span.clone());
+        match &stmt.node {
+            Stmt::Let {
+                is_mut,
+                name,
+                value,
+            } => {
+                let val = self.eval_expr(value).map_err(attach_span)?;
+                self.env.define(name.clone(), val, *is_mut);
+                Ok(ControlFlow::None)
+            }
+            Stmt::Assign(AssignStmt {
+                target_path,
+                op,
+                value,
+            }) => {
+                let right_val = self.eval_expr(value).map_err(attach_span)?;
+                let name = &target_path[0];
+                let current_val = self
+                    .env
+                    .get_val(name)
+                    .ok_or_else(|| (format!("未定义的变量: {}", name), stmt.span.clone()))?;
 
-            match &stmt.node {
-                Stmt::Let { is_mut, name, value } => {
-                    // 使用 map_err 贴上坐标
-                    let val = self.eval_expr(value).map_err(attach_span)?;
-                    self.env.define(name.clone(), val, *is_mut);
-                    Ok(ControlFlow::None)
+                let var = self.env.find_var(name).unwrap();
+                if !var.borrow().is_mut {
+                    return Err((
+                        format!("不可变变量 '{}' 无法被重新赋值", name),
+                        stmt.span.clone(),
+                    ));
                 }
-                Stmt::Assign(AssignStmt { target_path, op, value }) => {
-                    let right_val = self.eval_expr(value).map_err(attach_span)?;
-                    let name = &target_path[0];
-                    let current_val = self.env.get_val(name)
-                        .ok_or_else(|| (format!("未定义的变量: {}", name), stmt.span.clone()))?;
 
-                    // 权限校验报错，直接带上 span
-                    let var = self.env.find_var(name).unwrap();
-                    if !var.borrow().is_mut {
-                        return Err((format!("不可变变量 '{}' 无法被重新赋值", name), stmt.span.clone()));
+                let new_val = match (current_val, op.as_str(), right_val) {
+                    (_, "=", v) => v,
+                    (Value::Number(l), "+=", Value::Number(r)) => Value::Number(l + r),
+                    // ... 其他运算 ...
+                    _ => return Err(("无效的赋值操作或类型不匹配".to_string(), stmt.span.clone())),
+                };
+
+                self.env.set(name, new_val).map_err(attach_span)?;
+                Ok(ControlFlow::None)
+            }
+            Stmt::Expr(expr) => {
+                self.eval_expr(expr).map_err(attach_span)?;
+                Ok(ControlFlow::None)
+            }
+            Stmt::Return(Some(expr)) => {
+                let val = self.eval_expr(expr).map_err(attach_span)?;
+                Ok(ControlFlow::Return(val))
+            }
+            Stmt::Return(None) => Ok(ControlFlow::Return(Value::Void)),
+            Stmt::ImplicitReturn(expr) => {
+                let val = self.eval_expr(expr).map_err(attach_span)?;
+                Ok(ControlFlow::Return(val))
+            }
+            Stmt::Block(stmts) => {
+                self.env.push_scope();
+                let mut res = ControlFlow::None;
+
+                for s in stmts {
+                    res = self.eval_stmt(s)?;
+                    if matches!(res, ControlFlow::Return(_)) {
+                        break;
                     }
+                }
 
-                    let new_val = match (current_val, op.as_str(), right_val) {
-                        (_, "=", v) => v,
-                        (Value::Number(l), "+=", Value::Number(r)) => Value::Number(l + r),
-                        // ... 其他运算 ...
-                        _ => return Err(("无效的赋值操作或类型不匹配".to_string(), stmt.span.clone())),
-                    };
-
-                    self.env.set(name, new_val).map_err(attach_span)?;
-                    Ok(ControlFlow::None)
-                }
-                Stmt::Expr(expr) => {
-                    self.eval_expr(expr).map_err(attach_span)?;
-                    Ok(ControlFlow::None)
-                }
-                // ... 处理 Return 和 ImplicitReturn 也要加上 .map_err(attach_span)?
-                Stmt::Return(Some(expr)) => {
-                    let val = self.eval_expr(expr).map_err(attach_span)?;
-                    Ok(ControlFlow::Return(val))
-                }
-                Stmt::Return(None) => Ok(ControlFlow::Return(Value::Void)),
-                Stmt::ImplicitReturn(expr) => {
-                    let val = self.eval_expr(expr).map_err(attach_span)?;
-                    Ok(ControlFlow::Return(val))
-                }
+                self.env.pop_scope();
+                Ok(res) // 把控制流抛给外层
             }
         }
+    }
 
     /// 运行整个函数体
     pub fn execute_function(&mut self, func: &FunctionDef) -> Result<Value, (String, Span)> {
-            self.env.push_scope();
-            let result = self.execute_block(&func.statements);
-            self.env.pop_scope();
-            result
-        }
+        self.env.push_scope();
+        let result = self.execute_block(&func.statements);
+        self.env.pop_scope();
+        result
+    }
 
     pub fn execute_block(&mut self, body: &[Spanned<Stmt>]) -> Result<Value, (String, Span)> {
-            for stmt in body {
-                match self.eval_stmt(stmt)? {
-                    ControlFlow::Return(val) => return Ok(val),
-                    ControlFlow::None => continue,
-                }
+        for stmt in body {
+            match self.eval_stmt(stmt)? {
+                ControlFlow::Return(val) => return Ok(val),
+                ControlFlow::None => continue,
             }
-            Ok(Value::Void)
         }
+        Ok(Value::Void)
+    }
 }

@@ -92,6 +92,8 @@ pub enum Stmt {
     Return(Option<Expr>),
     /// 没分号的返回语句
     ImplicitReturn(Expr),
+    /// 块语句
+    Block(Vec<Spanned<Stmt>>),
 }
 
 /// 赋值语句

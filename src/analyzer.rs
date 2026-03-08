@@ -158,7 +158,6 @@ impl Analyzer {
                 let rhs_ty = self.infer_expr(value, span);
                 self.define_var(name.clone(), *is_mut, rhs_ty, span);
             }
-
             Stmt::Assign(AssignStmt {
                 target_path,
                 op: _,
@@ -176,7 +175,7 @@ impl Analyzer {
                         if !is_mut {
                             self.errors.push(
                                 StaticCheckError::new("不可变真的可变吗？",
-                                    format!("权限错误：无法对不可变变量 '{}' 重新赋值。提示：在声明时使用 'let mut {} = ...'", name, name),
+                                    format!("无法对不可变变量 '{}' 重新赋值。\nNote：在声明时使用 'let mut {} = ...'", name, name),
                                     span.clone()
                                 )
                             );
@@ -207,11 +206,9 @@ impl Analyzer {
                     }
                 }
             }
-
             Stmt::Expr(expr) => {
                 self.infer_expr(expr, span);
             }
-
             Stmt::Return(opt_expr) => {
                 let actual_ty = match opt_expr {
                     Some(e) => self.infer_expr(e, span),
@@ -219,10 +216,16 @@ impl Analyzer {
                 };
                 self.verify_return(actual_ty, span);
             }
-
             Stmt::ImplicitReturn(expr) => {
                 let actual_ty = self.infer_expr(expr, span);
                 self.verify_return(actual_ty, span);
+            }
+            Stmt::Block(stmts) => {
+                self.push_scope();
+                for s in stmts {
+                    self.check_stmt(s);
+                }
+                self.pop_scope();
             }
         }
     }

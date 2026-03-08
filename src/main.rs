@@ -61,11 +61,15 @@ fn main() {
                 }
             }
 
+            let char_start = source[..span.start].chars().count();
+            let char_end = source[..span.end].chars().count();
+            let char_span = char_start..char_end;
+
             Report::build(ReportKind::Error, (filename, span.clone()))
                 .with_message("Parse Error")
                 .with_config(Config::default().with_compact(false))
                 .with_label(
-                    Label::new((filename, span))
+                    Label::new((filename, char_span))
                         .with_message(expected_msg)
                         .with_color(Color::Red),
                 )
@@ -102,14 +106,47 @@ fn main() {
                 let char_end = source[..byte_span.end].chars().count();
                 let char_span = char_start..char_end;
 
+                let msgs: Vec<&str> = msg.split("\n").collect();
+                let mut labels = Vec::new();
+                for msg in &msgs {
+                    let clean_msg = msg.trim();
+                    if clean_msg.is_empty() {
+                        continue;
+                    }
+
+                    let lower_msg = clean_msg.to_lowercase().replace("：", ":");
+
+                    if lower_msg.starts_with("error:") {
+                        labels.push(
+                            Label::new((filename, char_span.clone()))
+                                .with_message(clean_msg)
+                                .with_color(Color::Red),
+                        );
+                    } else if lower_msg.starts_with("warning:") {
+                        labels.push(
+                            Label::new((filename, char_span.clone()))
+                                .with_message(clean_msg)
+                                .with_color(Color::Yellow),
+                        );
+                    } else if lower_msg.starts_with("note:") {
+                        labels.push(
+                            Label::new((filename, char_span.clone()))
+                                .with_message(clean_msg)
+                                .with_color(Color::Blue),
+                        );
+                    } else {
+                        labels.push(
+                            Label::new((filename, char_span.clone()))
+                                .with_message(clean_msg)
+                                .with_color(Color::Red),
+                        );
+                    }
+                }
+
                 Report::build(ReportKind::Error, (filename, char_span.clone()))
                     .with_message(title)
                     .with_config(Config::default().with_compact(false))
-                    .with_label(
-                        Label::new((filename, char_span))
-                            .with_message(msg)
-                            .with_color(Color::Red),
-                    )
+                    .with_labels(labels)
                     .finish()
                     .print((filename, Source::from(&source)))
                     .unwrap();

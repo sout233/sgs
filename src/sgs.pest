@@ -38,7 +38,7 @@ fn_stmt   = { "fn" ~ ident ~ "(" ~ fn_params ~ ")" ~ return_ty? ~ block }
 return_ty = { "->" ~ type_name }
 
 block = { "{" ~ block_stmt* ~ expr? ~ "}" }
-block_stmt = { return_stmt | let_stmt | assign_stmt | expr_stmt }
+block_stmt = { block | return_stmt | let_stmt | assign_stmt | expr_stmt }
 return_stmt = { "return" ~ expr? ~ semicolon }
 
 // 语句级规则
