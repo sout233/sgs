@@ -40,4 +40,6 @@ fn main() -> void {
     for hp in stats {
         println("HP:", hp);
     }
+
+    println("OMG" + "NO");
 }

@@ -246,14 +246,23 @@ impl Interpreter {
             Expr::Call { target, args } => {
                 if let Expr::Path(path) = &**target
                     && path.len() == 1
-                    && path[0] == "println"
+                    && (path[0] == "println" || path[0] == "print")
                 {
                     let mut outputs = Vec::new();
                     for arg in args {
                         let val = self.eval_expr(arg)?;
                         outputs.push(val.to_string());
                     }
-                    println!("{}", outputs.join(" "));
+
+                    let out_str = outputs.join(" ");
+
+                    if path[0] == "println" {
+                        println!("{}", out_str);
+                    } else {
+                        use std::io::Write;
+                        print!("{}", out_str);
+                        std::io::stdout().flush().unwrap();
+                    }
                     return Ok(Value::Void);
                 }
 

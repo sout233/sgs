@@ -144,6 +144,15 @@ impl Analyzer {
             },
         );
 
+        self.scopes[0].insert(
+            "print".to_string(),
+            Symbol {
+                is_mut: false,
+                ty: Type::Any,
+                decl_span: 0..0,
+            },
+        );
+
         for func in &sys.functions {
             let mut param_types = Vec::new();
             for p in &func.params {
