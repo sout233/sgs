@@ -241,7 +241,14 @@ impl Interpreter {
                 let new_val = match (current_val, op.as_str(), right_val) {
                     (_, "=", v) => v,
                     (Value::Number(l), "+=", Value::Number(r)) => Value::Number(l + r),
-                    // ... 其他运算 ...
+                    (Value::Number(l), "-=", Value::Number(r)) => Value::Number(l - r),
+                    (Value::Number(l), "*=", Value::Number(r)) => Value::Number(l * r),
+                    (Value::Number(l), "/=", Value::Number(r)) => {
+                        if r == 0.0 {
+                            return Err(("除数不能为0".to_string(), stmt.span.clone()));
+                        }
+                        Value::Number(l / r)
+                    }
                     _ => return Err(("无效的赋值操作或类型不匹配".to_string(), stmt.span.clone())),
                 };
 

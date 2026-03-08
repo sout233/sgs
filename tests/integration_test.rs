@@ -77,7 +77,7 @@ fn test_parse_movement_system() {
 
         assert_eq!(func.statements.len(), 1);
         assert_eq!(
-            func.statements[0],
+            func.statements[0].node,
             Stmt::Assign(AssignStmt {
                 target_path: vec!["Transition", "position", "x"]
                     .into_iter()
@@ -119,7 +119,6 @@ fn test_fn() {
     if let SgsNode::SystemDef(sys) = &ast[0] {
         assert_eq!(sys.functions.len(), 2);
 
-        // _process fn
         let func1 = &sys.functions[0];
         assert_eq!(func1.name, "_process");
         assert_eq!(func1.params.len(), 0);
@@ -131,10 +130,10 @@ fn test_fn() {
             is_mut,
             name,
             value,
-        } = &func1.statements[0]
+        } = &func1.statements[0].node
         {
             assert_eq!(name, "lambda_print");
-            assert!(!is_mut);
+            assert!(!*is_mut);
             if let Expr::Closure { params, body } = value {
                 assert_eq!(params.len(), 1);
                 assert_eq!(params[0].name, "msg");
@@ -148,7 +147,7 @@ fn test_fn() {
         }
 
         // lambda_print("hello world");
-        if let Stmt::Expr(Expr::Call { target, args }) = &func1.statements[1] {
+        if let Stmt::Expr(Expr::Call { target, args }) = &func1.statements[1].node {
             assert_eq!(**target, Expr::Path(vec!["lambda_print".to_string()]));
             assert_eq!(args.len(), 1);
             assert_eq!(args[0], Expr::StringLit("hello world".to_string()));
@@ -156,16 +155,16 @@ fn test_fn() {
             panic!("Expected Call expression statement");
         }
 
-        // 验证 idk fn
+        // idk fn
         let func2 = &sys.functions[1];
         assert_eq!(func2.name, "idk");
         assert_eq!(func2.params.len(), 1);
         assert_eq!(func2.params[0].name, "some_func");
-        assert_eq!(func2.params[0].ty, "func(string)->void"); // 空格没了
+        assert_eq!(func2.params[0].ty, "func(string)->void");
         assert_eq!(func2.statements.len(), 2);
 
         // some_func("hello world from idk");
-        if let Stmt::Expr(Expr::Call { target, args }) = &func2.statements[0] {
+        if let Stmt::Expr(Expr::Call { target, args }) = &func2.statements[0].node {
             assert_eq!(**target, Expr::Path(vec!["some_func".to_string()]));
             assert_eq!(args.len(), 1);
             assert_eq!(args[0], Expr::StringLit("hello world from idk".to_string()));
@@ -201,25 +200,15 @@ fn test_calculation_parsing() {
 
         assert_eq!(func.statements.len(), 5);
 
-        if let Stmt::Let {
-            is_mut,
-            name,
-            value,
-        } = &func.statements[0]
-        {
+        if let Stmt::Let { is_mut, name, value } = &func.statements[0].node {
             assert_eq!(name, "base_val");
-            assert!(!is_mut);
+            assert!(!*is_mut);
             assert_eq!(*value, Expr::Number(100.0));
         } else {
             panic!("应是let");
         }
 
-        if let Stmt::Assign(AssignStmt {
-            target_path,
-            op,
-            value,
-        }) = &func.statements[1]
-        {
+        if let Stmt::Assign(AssignStmt { target_path, op, value }) = &func.statements[1].node {
             assert_eq!(target_path, &vec!["Player", "hp"]);
             assert_eq!(op, "+=");
             assert_eq!(*value, Expr::Number(50.0));
@@ -227,36 +216,21 @@ fn test_calculation_parsing() {
             panic!("应该是+=");
         }
 
-        if let Stmt::Assign(AssignStmt {
-            target_path,
-            op,
-            value,
-        }) = &func.statements[2]
-        {
+        if let Stmt::Assign(AssignStmt { target_path, op, value }) = &func.statements[2].node {
             assert_eq!(op, "-=");
             assert_eq!(*value, Expr::Number(20.0));
         } else {
             panic!("应当是-=");
         }
 
-        if let Stmt::Assign(AssignStmt {
-            target_path,
-            op,
-            value,
-        }) = &func.statements[3]
-        {
+        if let Stmt::Assign(AssignStmt { target_path, op, value }) = &func.statements[3].node {
             assert_eq!(op, "*=");
             assert_eq!(*value, Expr::Number(2.0));
         } else {
             panic!("应该是 *=");
         }
 
-        if let Stmt::Assign(AssignStmt {
-            target_path,
-            op,
-            value,
-        }) = &func.statements[4]
-        {
+        if let Stmt::Assign(AssignStmt { target_path, op, value }) = &func.statements[4].node {
             assert_eq!(op, "/=");
             assert_eq!(*value, Expr::Number(1.5));
         } else {
@@ -283,37 +257,19 @@ fn test_complex_math_expression() {
     if let SgsNode::SystemDef(sys) = &ast[0] {
         let func = &sys.functions[0];
 
-        if let Stmt::Let {
-            is_mut,
-            name,
-            value,
-        } = &func.statements[0]
-        {
+        if let Stmt::Let { is_mut, name, value } = &func.statements[0].node {
             assert_eq!(name, "result");
-            assert!(!is_mut);
+            assert!(!*is_mut);
 
-            // 外层应当是加法
             if let Expr::BinaryOp { left, op, right } = value {
                 assert_eq!(op, "+");
                 assert_eq!(**left, Expr::Number(10.0));
 
-                // 右侧是乘法
-                if let Expr::BinaryOp {
-                    left: mul_left,
-                    op: mul_op,
-                    right: mul_right,
-                } = &**right
-                {
+                if let Expr::BinaryOp { left: mul_left, op: mul_op, right: mul_right } = &**right {
                     assert_eq!(mul_op, "*");
                     assert_eq!(**mul_left, Expr::Number(5.0));
 
-                    // 括号内是减法
-                    if let Expr::BinaryOp {
-                        left: sub_left,
-                        op: sub_op,
-                        right: sub_right,
-                    } = &**mul_right
-                    {
+                    if let Expr::BinaryOp { left: sub_left, op: sub_op, right: sub_right } = &**mul_right {
                         assert_eq!(sub_op, "-");
                         assert_eq!(**sub_left, Expr::Number(2.0));
                         assert_eq!(
@@ -343,7 +299,7 @@ fn test_interpreter_math_execution() {
         @type System;
         @name EngineMath;
 
-        fn _process() -> void {
+        fn main() -> void {
             let base = 10;
             let offset = 2 * 3;            // 6
             let mut total = base + offset; // 16
@@ -456,7 +412,7 @@ fn test_immutable_assignment_error() {
         let result = vm.execute_function(func);
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "不可变变量 'pi' 无法被重新赋值，请使用 let mut 声明");
+        assert_eq!(result.unwrap_err().0, "不可变变量 'pi' 无法被重新赋值");
     } else {
         panic!("应该是 SystemDef");
     }
@@ -495,17 +451,14 @@ fn test_advanced_expressions_and_interpolation() {
 
     if let SgsNode::SystemDef(sys) = &ast[0] {
         for func in &sys.functions {
-            // 提取参数名列表
             let params = func.params.iter().map(|p| p.name.clone()).collect();
 
-            // 将顶层函数包装成闭包
             let closure_val = sgs::interpreter::Value::Closure {
                 params,
                 body: func.statements.clone(),
                 captured_env: vm.env.scopes.clone(),
             };
 
-            // 存入全局环境
             vm.env.define(func.name.clone(), closure_val, false);
         }
 
@@ -517,15 +470,11 @@ fn test_advanced_expressions_and_interpolation() {
             assert!(res.is_ok(), "执行失败: {:?}", res.err());
         }
 
-        // 32 + (33/11) + 10 + 32 - 10
-        // = 32 + 3 + 10 + 32 - 10
-        // = 67
         assert_eq!(
             vm.env.get_val("a").unwrap(),
             sgs::interpreter::Value::Number(67.0)
         );
 
-        // 字符串内插验证
         assert_eq!(
             vm.env.get_val("msg").unwrap(),
             sgs::interpreter::Value::String("Result a is 67, next is 68".to_string())
