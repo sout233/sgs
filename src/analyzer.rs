@@ -350,34 +350,38 @@ impl Analyzer {
                 self.pop_scope();
                 self.loop_depth -= 1; // 离开循环
             }
-            Stmt::For { item_name, iterable, body } => {
-                            let iter_ty = self.infer_expr(iterable, span);
+            Stmt::For {
+                item_name,
+                iterable,
+                body,
+            } => {
+                let iter_ty = self.infer_expr(iterable, span);
 
-                            let item_ty = if let Type::Array(inner) = iter_ty {
-                                *inner
-                            } else if iter_ty != Type::Unknown {
-                                self.errors.push(StaticCheckError::new(
-                                    "类型错误",
-                                    format!("'for' 循环只能遍历数组，但得到了 '{}'", iter_ty),
-                                    span.clone(),
-                                ));
-                                Type::Unknown
-                            } else {
-                                Type::Unknown
-                            };
+                let item_ty = if let Type::Array(inner) = iter_ty {
+                    *inner
+                } else if iter_ty != Type::Unknown {
+                    self.errors.push(StaticCheckError::new(
+                        "类型错误",
+                        format!("'for' 循环只能遍历数组，但得到了 '{}'", iter_ty),
+                        span.clone(),
+                    ));
+                    Type::Unknown
+                } else {
+                    Type::Unknown
+                };
 
-                            self.loop_depth += 1;
-                            self.push_scope();
+                self.loop_depth += 1;
+                self.push_scope();
 
-                            self.define_var(item_name.clone(), false, item_ty, span);
+                self.define_var(item_name.clone(), false, item_ty, span);
 
-                            for s in body {
-                                self.check_stmt(s);
-                            }
+                for s in body {
+                    self.check_stmt(s);
+                }
 
-                            self.pop_scope();
-                            self.loop_depth -= 1;
-                        }
+                self.pop_scope();
+                self.loop_depth -= 1;
+            }
             Stmt::Break => {
                 if self.loop_depth == 0 {
                     self.errors.push(StaticCheckError::new(
@@ -496,12 +500,41 @@ impl Analyzer {
                     return Type::Unknown;
                 }
 
-                if op == "+" || op == "-" || op == "*" || op == "/" {
+                if op == "++" {
+                    if l_ty != Type::String || r_ty != Type::String {
+                        self.errors.push(StaticCheckError::new(
+                            "类型错误",
+                            format!(
+                                "'++' 只能用于连接两个字符串，但这里是 '{}' 和 '{}'",
+                                l_ty, r_ty
+                            ),
+                            fallback_span.clone(),
+                        ));
+                        return Type::Unknown;
+                    }
+                    return Type::String;
+                } else if op == "+" || op == "-" || op == "*" || op == "/" {
+                    if op == "+" && (l_ty == Type::String || r_ty == Type::String) {
+                        self.errors.push(
+                            StaticCheckError::new(
+                                "操作符错误",
+                                format!("不能使用 '+' 来操作字符串 ('{}' + '{}')", l_ty, r_ty),
+                                fallback_span.clone(),
+                            )
+                            .with_note(
+                                "SGS 使用 '++' 来进行字符串拼接，请尝试将 '+' 替换为 '++'",
+                                fallback_span.clone(),
+                            ),
+                        );
+                        return Type::Unknown;
+                    }
+
+                    // 纯数字校验
                     if l_ty != Type::Number || r_ty != Type::Number {
                         self.errors.push(StaticCheckError::new(
                             "类型错误",
                             format!(
-                                "首先 '{}' 只能用于两个数字，但这里是 '{}' 和 '{}'",
+                                "操作符 '{}' 只能用于两个数字，但这里是 '{}' 和 '{}'",
                                 op, l_ty, r_ty
                             ),
                             fallback_span.clone(),

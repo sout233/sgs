@@ -54,7 +54,7 @@ if_stmt = { "if" ~ expr ~ block ~ ("else" ~ (if_stmt | block))? }
 let_stmt    = { "let" ~ is_mut? ~ ident ~ "=" ~ expr ~ semicolon }
 assign_stmt = { path ~ ("[" ~ expr ~ "]")? ~ assign_op ~ expr ~ semicolon }
 expr_stmt   = { expr ~ semicolon }
-assign_op   = { "+=" | "-=" | "*=" | "/=" | "=" }
+assign_op = { "++=" | "+=" | "-=" | "*=" | "/=" | "=" }
 
 array_lit    = { "[" ~ (expr ~ ("," ~ expr)*)? ~ "]" }
 index_access = { path ~ "[" ~ expr ~ "]" }
@@ -75,7 +75,7 @@ term      = { factor ~ (mul_op ~ factor)* }
 factor = { closure | call | index_access | array_lit | interp_string | string_lit | bool_lit | number | path | "(" ~ expr ~ ")" }
 
 comp_op = { "==" | "!=" | "<=" | ">=" | "<" | ">" }
-add_op  = { "+" | "-" }
+add_op = { "++" | "+" | "-" }
 mul_op  = { "*" | "/" }
 
 closure = { "|" ~ fn_params ~ "|" ~ block }

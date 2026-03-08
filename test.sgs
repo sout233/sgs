@@ -41,5 +41,5 @@ fn main() -> void {
         println("HP:", hp);
     }
 
-    println("OMG" + "NO");
+    println("IM" ++ "GAY");
 }

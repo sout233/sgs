@@ -158,6 +158,13 @@ impl Interpreter {
                 let r = self.eval_expr(right)?;
 
                 match op.as_str() {
+                    "++" => {
+                        if let (Value::String(ls), Value::String(rs)) = (&l, &r) {
+                            Ok(Value::String(format!("{}{}", ls, rs)))
+                        } else {
+                            Err("字符串拼接 '++' 只能用于两个字符串".to_string())
+                        }
+                    }
                     "+" => {
                         if let (Value::Number(ln), Value::Number(rn)) = (&l, &r) {
                             Ok(Value::Number(ln + rn))
@@ -376,6 +383,7 @@ impl Interpreter {
                         let elem_val = arr_ref[idx].clone();
                         let new_val = match (elem_val, op.as_str(), right_val) {
                             (_, "=", v) => v,
+                            (Value::String(l), "++=", Value::String(r)) => Value::String(format!("{}{}", l, r)),
                             (Value::Number(l), "+=", Value::Number(r)) => Value::Number(l + r),
                             (Value::Number(l), "-=", Value::Number(r)) => Value::Number(l - r),
                             (Value::Number(l), "*=", Value::Number(r)) => Value::Number(l * r),
