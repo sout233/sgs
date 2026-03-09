@@ -106,6 +106,7 @@ fn main() -> void {
     println(player);
     player.pos.just_move();
     println(player);
+    assert(player == Player { pos: Vector2 { y: 1, x: 121 } });
 }
 
 fn just_move(mut pos: Vector2) {

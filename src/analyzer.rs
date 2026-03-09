@@ -119,15 +119,30 @@ impl Default for Analyzer {
 
 impl Analyzer {
     pub fn new() -> Self {
-        Self {
+        let mut analyzer = Self {
             scopes: vec![HashMap::new()],
             errors: Vec::new(),
             warnings: Vec::new(),
             current_return_ty: None,
             loop_depth: 0,
-            iterating_vars: Vec::new(),
             struct_defs: HashMap::new(),
-        }
+            iterating_vars: Vec::new(),
+        };
+
+        analyzer.define_var("println".to_string(), false, Type::Any, &(0..0));
+        analyzer.define_var("print".to_string(), false, Type::Any, &(0..0));
+
+        analyzer.define_var(
+            "assert".to_string(),
+            false,
+            Type::Function {
+                params: vec![Type::Bool],
+                ret: Box::new(Type::Void),
+            },
+            &(0..0),
+        );
+
+        analyzer
     }
 
     pub fn register_struct(&mut self, struct_def: &StructDef) {

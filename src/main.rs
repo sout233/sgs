@@ -204,6 +204,8 @@ fn main() {
     let mut vm = Interpreter::new();
     let mut executed = false;
 
+    vm.register_stdlib();
+
     vm.register_native_fn("get_time", |_args| {
         use std::time::{SystemTime, UNIX_EPOCH};
         let t = SystemTime::now()

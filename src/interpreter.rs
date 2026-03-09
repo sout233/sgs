@@ -310,28 +310,6 @@ impl Interpreter {
                 }
             }
             Expr::Call { target, args } => {
-                if let Expr::Path(path) = &**target
-                    && path.len() == 1
-                    && (path[0] == "println" || path[0] == "print")
-                {
-                    let mut outputs = Vec::new();
-                    for arg in args {
-                        let val = self.eval_expr(arg)?;
-                        outputs.push(val.to_string());
-                    }
-
-                    let out_str = outputs.join(" ");
-
-                    if path[0] == "println" {
-                        println!("{}", out_str);
-                    } else {
-                        use std::io::Write;
-                        print!("{}", out_str);
-                        std::io::stdout().flush().unwrap();
-                    }
-                    return Ok(Value::Void);
-                }
-
                 let target_val = self.eval_expr(target)?;
 
                 if let Value::NativeFunction(native_fn) = target_val {
@@ -348,10 +326,6 @@ impl Interpreter {
                     captured_env,
                 } = target_val
                 {
-                    if args.len() != params.len() {
-                        return Err("参数数量不匹配".to_string());
-                    }
-
                     let mut arg_values = Vec::new();
                     for arg in args {
                         arg_values.push(self.eval_expr(arg)?);
@@ -364,14 +338,15 @@ impl Interpreter {
                         self.env.define(name, val, is_mut);
                     }
 
-                    let return_value = self.execute_block(&body).expect("execute_block err");
+                    let return_value = self.execute_block(&body).map_err(|(msg, _)| msg)?;
 
                     self.env.pop_scope();
                     self.env.scopes = old_scopes;
 
                     return Ok(return_value);
                 }
-                Err("调用的目标不是一个可执行的函数或闭包".to_string())
+
+                Err(format!("目标不可被调用: {:?}", target_val))
             }
             Expr::MethodCall {
                 target,
@@ -883,6 +858,40 @@ impl Interpreter {
                 is_mut: false,
             })),
         );
+    }
+
+    pub fn register_stdlib(&mut self) {
+        // 注入 println
+        self.register_native_fn("println", |args| {
+            let strings: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+            println!("{}", strings.join(" "));
+            Ok(Value::Void)
+        });
+
+        // 注入 print
+        self.register_native_fn("print", |args| {
+            let strings: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+            print!("{}", strings.join(" "));
+            use std::io::Write;
+            let _ = std::io::stdout().flush(); // 强制刷新缓冲区
+            Ok(Value::Void)
+        });
+
+        // 注入 assert
+        self.register_native_fn("assert", |args| {
+            if args.len() != 1 {
+                return Err("assert 需要 1 个参数".to_string());
+            }
+            if let Value::Bool(b) = args[0] {
+                if b {
+                    Ok(Value::Void)
+                } else {
+                    Err("脚本断言失败 (Assertion Failed)!".to_string())
+                }
+            } else {
+                Err("assert 的参数必须是 bool 类型".to_string())
+            }
+        });
     }
 
     /// 运行整个函数体
