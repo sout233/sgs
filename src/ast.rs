@@ -189,4 +189,10 @@ pub enum Expr {
         name: String,
         fields: Vec<(String, Expr)>,
     },
+    /// 类型转换表达式
+    /// 比如 114 as string 这种
+    Cast {
+        expr: Box<Expr>,
+        ty_name: String,
+    },
 }

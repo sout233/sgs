@@ -369,50 +369,52 @@ fn parse_term(pair: pest::iterators::Pair<Rule>) -> Expr {
 }
 
 fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
-    let inner = pair.into_inner().next().unwrap();
+    let mut inner_pairs = pair.into_inner();
 
-    match inner.as_rule() {
-        Rule::number => Expr::Number(inner.as_str().parse().unwrap()),
-        Rule::bool_lit => Expr::Bool(inner.as_str() == "true"),
+    let base_inner = inner_pairs.next().unwrap();
+
+    let mut current_expr = match base_inner.as_rule() {
+        Rule::number => Expr::Number(base_inner.as_str().parse().unwrap()),
+        Rule::bool_lit => Expr::Bool(base_inner.as_str() == "true"),
         Rule::string_lit => {
-            Expr::StringLit(inner.into_inner().next().unwrap().as_str().to_string())
+            Expr::StringLit(base_inner.into_inner().next().unwrap().as_str().to_string())
         }
-        Rule::path => Expr::Path(inner.into_inner().map(|i| i.as_str().to_string()).collect()),
+        Rule::path => Expr::Path(base_inner.into_inner().map(|i| i.as_str().to_string()).collect()),
         Rule::closure => {
-            let mut closure_inner = inner.into_inner();
+            let mut closure_inner = base_inner.into_inner();
             let params = parse_fn_params(closure_inner.next().unwrap());
             let body = parse_block(closure_inner.next().unwrap());
             Expr::Closure { params, body }
         }
         Rule::call => {
-                    let mut parts = inner.into_inner();
+            let mut parts = base_inner.into_inner();
 
-                    let path_pair = parts.next().unwrap();
-                    let mut path: Vec<String> = path_pair.into_inner().map(|i| i.as_str().to_string()).collect();
+            let path_pair = parts.next().unwrap();
+            let mut path: Vec<String> = path_pair.into_inner().map(|i| i.as_str().to_string()).collect();
 
-                    let mut args = Vec::new();
-                    for p in parts {
-                        args.push(parse_expr(p));
-                    }
+            let mut args = Vec::new();
+            for p in parts {
+                args.push(parse_expr(p));
+            }
 
-                    if path.len() > 1 {
-                        let method = path.pop().unwrap();
-                        return Expr::MethodCall {
-                            target: Box::new(Expr::Path(path)),
-                            method,
-                            args,
-                        };
-                    }
-
-                    Expr::Call {
-                        target: Box::new(Expr::Path(path)),
-                        args,
-                    }
+            if path.len() > 1 {
+                let method = path.pop().unwrap();
+                Expr::MethodCall {
+                    target: Box::new(Expr::Path(path)),
+                    method,
+                    args,
                 }
-        Rule::expr => parse_expr(inner),
+            } else {
+                Expr::Call {
+                    target: Box::new(Expr::Path(path)),
+                    args,
+                }
+            }
+        }
+        Rule::expr => parse_expr(base_inner),
         Rule::interp_string => {
             let mut parts = Vec::new();
-            for part in inner.into_inner() {
+            for part in base_inner.into_inner() {
                 match part.as_rule() {
                     Rule::interp_text => parts.push(Expr::StringLit(part.as_str().to_string())),
                     Rule::interp_expr => parts.push(parse_expr(part.into_inner().next().unwrap())),
@@ -422,11 +424,11 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
             Expr::StringInterp(parts)
         }
         Rule::array_lit => {
-            let elements = inner.into_inner().map(parse_expr).collect();
+            let elements = base_inner.into_inner().map(parse_expr).collect();
             Expr::Array(elements)
         }
         Rule::index_access => {
-            let mut inner_parts = inner.into_inner();
+            let mut inner_parts = base_inner.into_inner();
             let path = Expr::Path(
                 inner_parts
                     .next()
@@ -442,22 +444,34 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
             }
         }
         Rule::struct_init => {
-                    let mut inner_parts = inner.into_inner();
-                    let name = inner_parts.next().unwrap().as_str().to_string();
+            let mut inner_parts = base_inner.into_inner();
+            let name = inner_parts.next().unwrap().as_str().to_string();
 
-                    let mut fields = Vec::new();
-                    for field_pair in inner_parts {
-                        let mut f_inner = field_pair.into_inner();
-                        let f_name = f_inner.next().unwrap().as_str().to_string();
-                        let f_expr = parse_expr(f_inner.next().unwrap());
+            let mut fields = Vec::new();
+            for field_pair in inner_parts {
+                let mut f_inner = field_pair.into_inner();
+                let f_name = f_inner.next().unwrap().as_str().to_string();
+                let f_expr = parse_expr(f_inner.next().unwrap());
 
-                        fields.push((f_name, f_expr));
-                    }
+                fields.push((f_name, f_expr));
+            }
 
-                    Expr::StructInit { name, fields }
-                }
-        _ => unreachable!("parse_factor 爆了: {:?}", inner.as_rule()),
+            Expr::StructInit { name, fields }
+        }
+        _ => unreachable!("parse_factor 爆了: {:?}", base_inner.as_rule()),
+    };
+
+    for next_pair in inner_pairs {
+        if next_pair.as_rule() == Rule::type_name {
+            let ty_name = next_pair.as_str().to_string();
+            current_expr = Expr::Cast {
+                expr: Box::new(current_expr),
+                ty_name,
+            };
+        }
     }
+
+    current_expr
 }
 
 fn parse_block(pair: pest::iterators::Pair<Rule>) -> Vec<Spanned<Stmt>> {

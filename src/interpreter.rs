@@ -490,6 +490,31 @@ impl Interpreter {
                     fields: Rc::new(RefCell::new(field_map)),
                 })
             }
+            Expr::Cast {
+                expr: cast_expr,
+                ty_name,
+            } => {
+                let val = self.eval_expr(cast_expr)?;
+
+                match ty_name.as_str() {
+                    "string" => match val {
+                        Value::Number(n) => Ok(Value::String(n.to_string())),
+                        Value::String(s) => Ok(Value::String(s)),
+                        Value::Bool(b) => Ok(Value::String(b.to_string())),
+                        _ => Err("该类型无法转换为 string".to_string()),
+                    },
+                    "number" | "float" => match val {
+                        Value::String(s) => s
+                            .parse::<f64>()
+                            .map(Value::Number)
+                            .map_err(|_| format!("无法将字符串 '{}' 解析为数字", s)),
+                        Value::Number(n) => Ok(Value::Number(n)),
+                        Value::Bool(b) => Ok(Value::Number(if b { 1.0 } else { 0.0 })),
+                        _ => Err("该类型无法转换为 number".to_string()),
+                    },
+                    _ => Err(format!("目前不支持强制转换为: {}", ty_name)),
+                }
+            }
         }
     }
 

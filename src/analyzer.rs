@@ -1,3 +1,5 @@
+/// 静态检查器（sgs-analyzer）
+/// 或许将来可以成为一个独立的个体，作为LSP
 // src/analyzer.rs
 use crate::ast::*;
 use std::collections::HashMap;
@@ -1037,6 +1039,38 @@ impl Analyzer {
                 }
 
                 Type::Struct(name.clone())
+            }
+            Expr::Cast {
+                expr: cast_expr,
+                ty_name,
+            } => {
+                let expr_ty = self.infer_expr(cast_expr, fallback_span);
+                let target_ty = Type::from_name(ty_name);
+
+                if target_ty == Type::Unknown {
+                    self.errors.push(StaticCheckError::new(
+                        "未知类型",
+                        format!("无法转换为未知的类型 '{}'", ty_name),
+                        fallback_span.clone(),
+                    ));
+                    return Type::Unknown;
+                }
+
+                match (&expr_ty, &target_ty) {
+                    (Type::Number, Type::String)
+                    | (Type::String, Type::Number)
+                    | (Type::Bool, Type::String)
+                    | (Type::Bool, Type::Number) => target_ty,
+                    (a, b) if a == b => target_ty.clone(),
+                    _ => {
+                        self.errors.push(StaticCheckError::new(
+                            "无效的类型转换",
+                            format!("SGS 暂不支持从 '{}' 转换到 '{}'", expr_ty, target_ty),
+                            fallback_span.clone(),
+                        ));
+                        Type::Unknown
+                    }
+                }
             }
             _ => Type::Unknown, // TODO: 闭包等复杂的
         }
