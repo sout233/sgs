@@ -1,6 +1,11 @@
 @type System;
 @name Test;
 
+struct PlayerData {
+    hp: number,
+    name: string,
+}
+
 fn main() -> void {
     let a = 100;
     println("First a:", a);
@@ -55,4 +60,12 @@ fn main() -> void {
     let mut str = "what is your ";
     str ++= "name?";
     println("Final str:", str);
+
+    let mut p = PlayerData {
+        hp: 123,
+        name: "Sout",
+    };
+    println(p.name);
+    p.name = "guy";
+    println(p.name);
 }

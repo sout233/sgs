@@ -123,6 +123,21 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
                             statements,
                         });
                     }
+                    Rule::struct_def => {
+                        let mut inner = stmt_inner.into_inner();
+                        let name = inner.next().unwrap().as_str().to_string();
+
+                        let mut fields = Vec::new();
+                        for field_pair in inner {
+                            let mut f_inner = field_pair.into_inner();
+                            let f_name = f_inner.next().unwrap().as_str().to_string();
+                            let f_type = f_inner.next().unwrap().as_str().to_string();
+
+                            fields.push((f_name, f_type));
+                        }
+
+                        ast_nodes.push(SgsNode::StructDef(StructDef { name, fields }));
+                    }
                     _ => {}
                 }
             }
@@ -426,6 +441,21 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
                 index: Box::new(index),
             }
         }
+        Rule::struct_init => {
+                    let mut inner_parts = inner.into_inner();
+                    let name = inner_parts.next().unwrap().as_str().to_string();
+
+                    let mut fields = Vec::new();
+                    for field_pair in inner_parts {
+                        let mut f_inner = field_pair.into_inner();
+                        let f_name = f_inner.next().unwrap().as_str().to_string();
+                        let f_expr = parse_expr(f_inner.next().unwrap());
+
+                        fields.push((f_name, f_expr));
+                    }
+
+                    Expr::StructInit { name, fields }
+                }
         _ => unreachable!("parse_factor 爆了: {:?}", inner.as_rule()),
     }
 }

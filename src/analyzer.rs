@@ -10,6 +10,7 @@ pub enum Type {
     Bool,
     Function { params: Vec<Type>, ret: Box<Type> },
     Array(Box<Type>),
+    Struct(String),
     Unknown,
     Any,
 }
@@ -36,7 +37,7 @@ impl std::fmt::Display for Type {
             Type::Array(inner) => write!(f, "{}[]", inner),
             Type::Unknown => write!(f, "unknown"),
             Type::Any => write!(f, "any"),
-
+            Type::Struct(name) => write!(f, "{}", name),
             Type::Function { params, ret } => {
                 write!(f, "func(")?;
 
@@ -105,6 +106,7 @@ pub struct Analyzer {
     current_return_ty: Option<Type>,
     loop_depth: usize,
     iterating_vars: Vec<String>,
+    pub struct_defs: HashMap<String, HashMap<String, Type>>,
 }
 
 impl Default for Analyzer {
@@ -122,7 +124,16 @@ impl Analyzer {
             current_return_ty: None,
             loop_depth: 0,
             iterating_vars: Vec::new(),
+            struct_defs: HashMap::new(),
         }
+    }
+
+    pub fn register_struct(&mut self, struct_def: &StructDef) {
+        let mut fields = HashMap::new();
+        for (f_name, f_ty_str) in &struct_def.fields {
+            fields.insert(f_name.clone(), Type::from_name(f_ty_str));
+        }
+        self.struct_defs.insert(struct_def.name.clone(), fields);
     }
 
     fn push_scope(&mut self) {
@@ -253,7 +264,7 @@ impl Analyzer {
                     .map(|sym| (sym.is_mut, sym.ty.clone(), sym.decl_span.clone()));
 
                 match var_info {
-                    Some((is_mut, expected_ty, decl_span)) => {
+                    Some((is_mut, mut expected_ty, decl_span)) => {
                         if !is_mut {
                             self.errors.push(
                                 StaticCheckError::new(
@@ -266,6 +277,22 @@ impl Analyzer {
                                     decl_span,
                                 ),
                             );
+                        }
+
+                        for field in target_path.iter().skip(1) {
+                            if let Type::Struct(struct_name) = &expected_ty {
+                                if let Some(fields_map) = self.struct_defs.get(struct_name) {
+                                    if let Some(field_ty) = fields_map.get(field) {
+                                        expected_ty = field_ty.clone(); // 成功进入下一层
+                                    } else {
+                                        expected_ty = Type::Unknown;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                expected_ty = Type::Unknown;
+                                break;
+                            }
                         }
 
                         let actual_target_ty = if let Some(idx_expr) = index {
@@ -474,18 +501,48 @@ impl Analyzer {
                 Type::String
             }
             Expr::Path(path) => {
-                let name = &path[0];
-                match self.resolve_var(name) {
+                let root_name = &path[0];
+                let mut current_ty = match self.resolve_var(root_name) {
                     Some(sym) => sym.ty.clone(),
                     None => {
                         self.errors.push(StaticCheckError::new(
                             "变量未定义",
-                            format!("找不到变量: '{}'", name),
+                            format!("找不到变量: '{}'", root_name),
                             fallback_span.clone(),
                         ));
-                        Type::Unknown
+                        return Type::Unknown;
+                    }
+                };
+
+                for field in path.iter().skip(1) {
+                    if let Type::Struct(struct_name) = &current_ty {
+                        if let Some(fields_map) = self.struct_defs.get(struct_name) {
+                            if let Some(field_ty) = fields_map.get(field) {
+                                current_ty = field_ty.clone();
+                            } else {
+                                self.errors.push(StaticCheckError::new(
+                                    "字段不存在",
+                                    format!("结构体 '{}' 没有 '{}' 字段", struct_name, field),
+                                    fallback_span.clone(),
+                                ));
+                                return Type::Unknown;
+                            }
+                        } else {
+                            return Type::Unknown;
+                        }
+                    } else {
+                        self.errors.push(StaticCheckError::new(
+                            "属性读取错误",
+                            format!(
+                                "无法读取 '{}' 上的属性 '.{}'，因为它不是结构体",
+                                current_ty, field
+                            ),
+                            fallback_span.clone(),
+                        ));
+                        return Type::Unknown;
                     }
                 }
+                current_ty
             }
             Expr::Bool(_) => Type::Bool,
             Expr::Array(elements) => {
@@ -926,6 +983,60 @@ impl Analyzer {
                         Type::Unknown
                     }
                 }
+            }
+            Expr::StructInit { name, fields } => {
+                let struct_blueprint = match self.struct_defs.get(name) {
+                    Some(bp) => bp.clone(),
+                    None => {
+                        self.errors.push(StaticCheckError::new(
+                            "未知类型",
+                            format!("找不到名为 '{}' 的结构体", name),
+                            fallback_span.clone(),
+                        ));
+                        return Type::Unknown;
+                    }
+                };
+
+                let mut provided_fields = HashMap::new();
+
+                for (f_name, f_expr) in fields {
+                    let expr_ty = self.infer_expr(f_expr, fallback_span);
+                    provided_fields.insert(f_name.clone(), true);
+
+                    if let Some(expected_ty) = struct_blueprint.get(f_name) {
+                        if expr_ty != Type::Unknown
+                            && *expected_ty != Type::Unknown
+                            && expr_ty != *expected_ty
+                        {
+                            self.errors.push(StaticCheckError::new(
+                                "字段类型不匹配",
+                                format!(
+                                    "实例化 '{}' 时，字段 '{}' 期待 '{}'，但得到了 '{}'",
+                                    name, f_name, expected_ty, expr_ty
+                                ),
+                                fallback_span.clone(),
+                            ));
+                        }
+                    } else {
+                        self.errors.push(StaticCheckError::new(
+                            "不存在的字段",
+                            format!("结构体 '{}' 根本没有名为 '{}' 的字段", name, f_name),
+                            fallback_span.clone(),
+                        ));
+                    }
+                }
+
+                for (req_field, _) in struct_blueprint {
+                    if !provided_fields.contains_key(&req_field) {
+                        self.errors.push(StaticCheckError::new(
+                            "漏写字段",
+                            format!("实例化 '{}' 时，缺少必要的字段: '{}'", name, req_field),
+                            fallback_span.clone(),
+                        ));
+                    }
+                }
+
+                Type::Struct(name.clone())
             }
             _ => Type::Unknown, // TODO: 闭包等复杂的
         }

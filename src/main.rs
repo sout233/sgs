@@ -88,9 +88,19 @@ fn main() {
     println!("Running Static Analysis...");
 
     for node in &ast {
-        if let SgsNode::SystemDef(sys) = node {
-            analyzer.register_functions(sys);
+        match node {
+            SgsNode::StructDef(s_def) => {
+                analyzer.register_struct(s_def);
+            }
+            SgsNode::SystemDef(sys) => {
+                analyzer.register_functions(sys);
+            }
+            _ => {}
+        }
+    }
 
+    for node in &ast {
+        if let SgsNode::SystemDef(sys) = node {
             for func in &sys.functions {
                 analyzer.check_function(func);
             }

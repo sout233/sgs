@@ -18,7 +18,10 @@ type_name = {
   | ident
 }
 
-stmt = { annotation | mount_stmt | param_stmt | require_stmt | fn_stmt }
+struct_field_def = { ident ~ ":" ~ type_name }
+struct_def = { "struct" ~ ident ~ "{" ~ (struct_field_def ~ ("," ~ struct_field_def)* ~ ","?)? ~ "}" }
+
+stmt = { annotation | mount_stmt | param_stmt | require_stmt | fn_stmt | struct_def }
 
 annotation   = { "@" ~ ident ~ ident ~ semicolon }
 mount_stmt   = { "mount" ~ ident ~ semicolon }
@@ -72,7 +75,10 @@ expr      = { math_expr ~ (comp_op ~ math_expr)* }
 math_expr = { term ~ (add_op ~ term)* }
 term      = { factor ~ (mul_op ~ factor)* }
 
-factor = { closure | call | index_access | array_lit | interp_string | string_lit | bool_lit | number | path | "(" ~ expr ~ ")" }
+struct_field_init = { ident ~ ":" ~ expr }
+struct_init = { ident ~ "{" ~ (struct_field_init ~ ("," ~ struct_field_init)* ~ ","?)? ~ "}" }
+
+factor = { closure | call | struct_init | index_access | array_lit | interp_string | string_lit | bool_lit | number | path | "(" ~ expr ~ ")" }
 
 comp_op = { "==" | "!=" | "<=" | ">=" | "<" | ">" }
 add_op = { "++" | "+" | "-" }

@@ -28,6 +28,10 @@ pub enum Value {
         body: Vec<Spanned<Stmt>>,
         captured_env: Vec<HashMap<String, Rc<RefCell<Variable>>>>,
     },
+    Struct {
+        name: String,
+        fields: Rc<RefCell<HashMap<String, Value>>>,
+    },
 }
 
 impl std::fmt::Display for Value {
@@ -48,6 +52,19 @@ impl std::fmt::Display for Value {
                     write!(f, "{}", val)?;
                 }
                 write!(f, "]")
+            }
+            Value::Struct { name, fields } => {
+                write!(f, "{} {{ ", name)?;
+                let map = fields.borrow();
+                let mut first = true;
+                for (k, v) in map.iter() {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", k, v)?;
+                    first = false;
+                }
+                write!(f, " }}")
             }
         }
     }
@@ -144,14 +161,39 @@ impl Interpreter {
             Expr::StringLit(s) => Ok(Value::String(s.clone())),
             Expr::Bool(b) => Ok(Value::Bool(*b)),
             Expr::Path(path) => {
-                // TODO: 支持复杂变量路径
-                if path.len() == 1 {
-                    self.env
-                        .get(&path[0])
-                        .ok_or_else(|| format!("找不到变量: {}", path[0]))
-                } else {
-                    Err(format!("暂不支持复杂路径的读取: {:?}", path))
+                let mut current_val = self
+                    .env
+                    .get(&path[0])
+                    .ok_or_else(|| format!("找不到变量: {}", path[0]))?;
+
+                for field_name in path.iter().skip(1) {
+                    let next_val = match current_val {
+                        Value::Struct {
+                            ref fields,
+                            ref name,
+                        } => {
+                            let map = fields.borrow();
+                            if let Some(val) = map.get(field_name) {
+                                val.clone()
+                            } else {
+                                return Err(format!(
+                                    "结构体 '{}' 没有 '{}' 这个字段",
+                                    name, field_name
+                                ));
+                            }
+                        }
+                        _ => {
+                            return Err(format!(
+                                "试图读取属性 '.{}'，但目标不是结构体",
+                                field_name
+                            ));
+                        }
+                    };
+
+                    current_val = next_val;
                 }
+
+                Ok(current_val)
             }
             Expr::BinaryOp { left, op, right } => {
                 let l = self.eval_expr(left)?;
@@ -435,6 +477,19 @@ impl Interpreter {
                 }
                 Ok(Value::String(result_str))
             }
+            Expr::StructInit { name, fields } => {
+                let mut field_map = HashMap::new();
+
+                for (f_name, f_expr) in fields {
+                    let val = self.eval_expr(f_expr)?; // 递归计算字段的值
+                    field_map.insert(f_name.clone(), val);
+                }
+
+                Ok(Value::Struct {
+                    name: name.clone(),
+                    fields: Rc::new(RefCell::new(field_map)),
+                })
+            }
         }
     }
 
@@ -459,18 +514,54 @@ impl Interpreter {
                 index,
             }) => {
                 let right_val = self.eval_expr(value).map_err(attach_span)?;
-                let name = &target_path[0];
-                let current_val = self
-                    .env
-                    .get_val(name)
-                    .ok_or_else(|| (format!("未定义的变量: {}", name), stmt.span.clone()))?;
+                let root_name = &target_path[0];
 
-                let var = self.env.find_var(name).unwrap();
-                if !var.borrow().is_mut {
+                let var_rc = self
+                    .env
+                    .find_var(root_name)
+                    .ok_or_else(|| (format!("未定义的变量: {}", root_name), stmt.span.clone()))?;
+
+                if !var_rc.borrow().is_mut {
                     return Err((
-                        format!("不可变变量 '{}' 无法被重新赋值", name),
+                        format!("不可变变量 '{}' 无法被重新赋值", root_name),
                         stmt.span.clone(),
                     ));
+                }
+
+                let mut current_val = var_rc.borrow().value.clone();
+                let mut target_struct_fields = None;
+
+                if target_path.len() > 1 {
+                    for (i, field) in target_path.iter().enumerate().skip(1) {
+                        let is_last = i == target_path.len() - 1;
+
+                        let next_val = match current_val {
+                            Value::Struct {
+                                ref fields,
+                                ref name,
+                            } => {
+                                if is_last {
+                                    target_struct_fields = Some(fields.clone());
+                                }
+                                let map = fields.borrow();
+                                map.get(field)
+                                    .ok_or_else(|| {
+                                        (
+                                            format!("结构体 '{}' 没有 '{}' 字段", name, field),
+                                            stmt.span.clone(),
+                                        )
+                                    })?
+                                    .clone()
+                            }
+                            _ => {
+                                return Err((
+                                    format!("试图读取属性 '.{}'，但目标不是结构体", field),
+                                    stmt.span.clone(),
+                                ));
+                            }
+                        };
+                        current_val = next_val;
+                    }
                 }
 
                 if let Some(idx_expr) = index {
@@ -484,8 +575,8 @@ impl Interpreter {
                         return Err(("数组索引必须是数字".into(), stmt.span.clone()));
                     };
 
-                    if let Value::Array(arr) = current_val {
-                        let mut arr_ref = arr.borrow_mut();
+                    if let Value::Array(arr_rc) = current_val {
+                        let mut arr_ref = arr_rc.borrow_mut();
                         if idx >= arr_ref.len() {
                             return Err((
                                 format!("索引越界：长度 {}, 访问 {}", arr_ref.len(), idx),
@@ -540,7 +631,15 @@ impl Interpreter {
                     _ => return Err(("无效的赋值操作或类型不匹配".to_string(), stmt.span.clone())),
                 };
 
-                self.env.set(name, new_val).map_err(attach_span)?;
+                if let Some(fields_rc) = target_struct_fields {
+                    let target_field_name = target_path.last().unwrap();
+                    fields_rc
+                        .borrow_mut()
+                        .insert(target_field_name.clone(), new_val);
+                } else {
+                    self.env.set(root_name, new_val).map_err(attach_span)?;
+                }
+
                 Ok(ControlFlow::None)
             }
             Stmt::Expr(expr) => {

@@ -16,6 +16,7 @@ pub enum SgsNode {
     EntityDef(EntityDef),
     ComponentDef(ComponentDef),
     SystemDef(SystemDef),
+    StructDef(StructDef),
 }
 
 /// Entity 定义
@@ -66,6 +67,15 @@ pub struct FunctionDef {
     pub return_ty: Option<String>,
     /// 函数体里的东西
     pub statements: Vec<Spanned<Stmt>>,
+}
+
+/// 结构体定义
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructDef {
+    /// 结构体的名字
+    pub name: String,
+    /// 应该是字段吧，前面是字段名，后面是类型
+    pub fields: Vec<(String, String)>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -173,5 +183,10 @@ pub enum Expr {
     Index {
         target: Box<Expr>,
         index: Box<Expr>,
+    },
+    /// 结构体声明
+    StructInit {
+        name: String,
+        fields: Vec<(String, Expr)>,
     },
 }
