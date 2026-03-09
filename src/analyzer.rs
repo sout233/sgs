@@ -82,11 +82,29 @@ impl StaticCheckError {
     }
 }
 
+pub struct StaticCheckWarning {
+    pub title: String,
+    pub message: String,
+    pub span: Span,
+}
+
+impl StaticCheckWarning {
+    pub fn new(title: impl Into<String>, message: impl Into<String>, span: Span) -> Self {
+        Self {
+            title: title.into(),
+            message: message.into(),
+            span,
+        }
+    }
+}
+
 pub struct Analyzer {
     scopes: Vec<HashMap<String, Symbol>>,
     pub errors: Vec<StaticCheckError>,
+    pub warnings: Vec<StaticCheckWarning>,
     current_return_ty: Option<Type>,
     loop_depth: usize,
+    iterating_vars: Vec<String>,
 }
 
 impl Default for Analyzer {
@@ -100,8 +118,10 @@ impl Analyzer {
         Self {
             scopes: vec![HashMap::new()],
             errors: Vec::new(),
+            warnings: Vec::new(),
             current_return_ty: None,
             loop_depth: 0,
+            iterating_vars: Vec::new(),
         }
     }
 
@@ -217,6 +237,16 @@ impl Analyzer {
             }) => {
                 let rhs_ty = self.infer_expr(value, span);
                 let name = &target_path[0];
+
+                if self.iterating_vars.contains(name) {
+                    self.warnings.push(StaticCheckWarning::new(
+                        "遍历中修改集合",
+                        format!("
+                            你正在对 '{}' 进行 for 循环遍历，同时又在这里修改了它。
+                            SGS 使用快照机制，这不会导致死循环，但新增/删除的元素不会在当前循环中生效，请注意逻辑预期", name),
+                        span.clone(),
+                    ));
+                }
 
                 let var_info = self
                     .resolve_var(name)
@@ -375,12 +405,25 @@ impl Analyzer {
 
                 self.define_var(item_name.clone(), false, item_ty, span);
 
+                let mut locked_var = None;
+                if let Expr::Path(path) = iterable {
+                    if path.len() == 1 {
+                        let name = path[0].clone();
+                        self.iterating_vars.push(name.clone());
+                        locked_var = Some(name);
+                    }
+                }
+
                 for s in body {
                     self.check_stmt(s);
                 }
 
                 self.pop_scope();
                 self.loop_depth -= 1;
+
+                if locked_var.is_some() {
+                    self.iterating_vars.pop();
+                }
             }
             Stmt::Break => {
                 if self.loop_depth == 0 {
@@ -661,6 +704,18 @@ impl Analyzer {
                             ));
                             return Type::Unknown;
                         }
+
+                        if let Expr::Path(path) = &**target {
+                            let name = &path[0];
+                            if self.iterating_vars.contains(name) {
+                                self.warnings.push(StaticCheckWarning::new(
+                                    "遍历中追加元素",
+                                    format!("在 for 循环内部调用 '{}.push()'。注意：这只会修改原数组，新元素不会参与本次遍历。", name),
+                                    fallback_span.clone(),
+                                ));
+                            }
+                        }
+
                         if let Type::Array(inner_ty) = &target_ty {
                             let arg_ty = self.infer_expr(&args[0], fallback_span);
                             if arg_ty != Type::Unknown
@@ -692,6 +747,18 @@ impl Analyzer {
                             ));
                             return Type::Unknown;
                         }
+
+                        if let Expr::Path(path) = &**target {
+                            let name = &path[0];
+                            if self.iterating_vars.contains(name) {
+                                self.warnings.push(StaticCheckWarning::new(
+                                    "遍历中弹出元素",
+                                    format!("在 for 循环内部调用 '{}.pop()'。注意：循环仍会按照进入前的快照长度继续执行。", name),
+                                    fallback_span.clone(),
+                                ));
+                            }
+                        }
+
                         if let Type::Array(inner_ty) = target_ty {
                             *inner_ty
                         } else {

@@ -40,9 +40,9 @@ fn main() {
                     prefix = prefix.trim_end();
 
                     if let Some(idx) = prefix.rfind("//")
-                        && !prefix[idx..].contains('\n') {
-                            prefix = prefix[..idx].trim_end();
-
+                        && !prefix[idx..].contains('\n')
+                    {
+                        prefix = prefix[..idx].trim_end();
                     }
 
                     if prefix.ends_with("*/")
@@ -93,6 +93,34 @@ fn main() {
 
             for func in &sys.functions {
                 analyzer.check_function(func);
+            }
+        }
+    }
+
+    if !analyzer.warnings.is_empty() {
+        for warn in analyzer.warnings {
+            let title = warn.title;
+            let msg = warn.message;
+            let byte_span = warn.span;
+
+            if byte_span.start != 0 {
+                let char_start = source[..byte_span.start].chars().count();
+                let char_end = source[..byte_span.end].chars().count();
+                let char_span = char_start..char_end;
+
+                Report::build(ReportKind::Warning, (filename, char_span.clone()))
+                    .with_message(title)
+                    .with_config(Config::default().with_compact(false))
+                    .with_label(
+                        Label::new((filename, char_span))
+                            .with_message(msg)
+                            .with_color(Color::Yellow),
+                    )
+                    .finish()
+                    .print((filename, Source::from(&source)))
+                    .unwrap();
+            } else {
+                println!("\x1b[33mWarning: {}\x1b[0m\n  --> {}", title, msg);
             }
         }
     }
