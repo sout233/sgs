@@ -155,8 +155,17 @@ fn parse_fn_params(pair: pest::iterators::Pair<Rule>) -> Vec<FnParam> {
     pair.into_inner()
         .map(|p| {
             let mut inner = p.into_inner();
+            let mut next_pair = inner.next().unwrap();
+            let mut is_mut = false;
+
+            if next_pair.as_rule() == Rule::is_mut {
+                is_mut = true;
+                next_pair = inner.next().unwrap();
+            }
+
             FnParam {
-                name: inner.next().unwrap().as_str().to_string(),
+                is_mut,
+                name: next_pair.as_str().to_string(),
                 ty: inner.next().unwrap().as_str().replace(" ", ""),
             }
         })
@@ -379,7 +388,12 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
         Rule::string_lit => {
             Expr::StringLit(base_inner.into_inner().next().unwrap().as_str().to_string())
         }
-        Rule::path => Expr::Path(base_inner.into_inner().map(|i| i.as_str().to_string()).collect()),
+        Rule::path => Expr::Path(
+            base_inner
+                .into_inner()
+                .map(|i| i.as_str().to_string())
+                .collect(),
+        ),
         Rule::closure => {
             let mut closure_inner = base_inner.into_inner();
             let params = parse_fn_params(closure_inner.next().unwrap());
@@ -390,7 +404,10 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
             let mut parts = base_inner.into_inner();
 
             let path_pair = parts.next().unwrap();
-            let mut path: Vec<String> = path_pair.into_inner().map(|i| i.as_str().to_string()).collect();
+            let mut path: Vec<String> = path_pair
+                .into_inner()
+                .map(|i| i.as_str().to_string())
+                .collect();
 
             let mut args = Vec::new();
             for p in parts {

@@ -80,6 +80,7 @@ pub struct StructDef {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct FnParam {
+    pub is_mut: bool,
     pub name: String,
     /// 其实是type
     pub ty: String,

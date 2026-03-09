@@ -30,7 +30,7 @@ require_stmt = { "require" ~ is_mut? ~ ident ~ semicolon }
 
 is_mut = { "mut" }
 
-fn_param  = { ident ~ ":" ~ type_name }
+fn_param = { is_mut? ~ ident ~ ":" ~ type_name }
 fn_params = { (fn_param ~ ("," ~ fn_param)*)? }
 
 fn_stmt   = { "fn" ~ ident ~ "(" ~ fn_params ~ ")" ~ return_ty? ~ block }

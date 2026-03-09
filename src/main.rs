@@ -205,7 +205,11 @@ fn main() {
     for node in ast {
         if let SgsNode::SystemDef(sys) = node {
             for func in &sys.functions {
-                let params = func.params.iter().map(|p| p.name.clone()).collect();
+                let params = func
+                    .params
+                    .iter()
+                    .map(|p| (p.is_mut, p.name.clone()))
+                    .collect();
                 let closure_val = sgs::interpreter::Value::Closure {
                     params,
                     body: func.statements.clone(),

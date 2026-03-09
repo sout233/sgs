@@ -94,15 +94,15 @@ fn main() -> void {
     };
 
     println(player);
-    player.pos = just_move(player.pos);
+    just_move(player.pos);
     println(player);
     player.pos.x = "120" as float;
     println(player);
+    player.pos.just_move();
+    println(player);
 }
 
-fn just_move(pos: Vector2) -> Vector2 {
-    Vector2 {
-        x: pos.x + 1,
-        y: pos.y + 1
-    }
+fn just_move(mut pos: Vector2) {
+    pos.x += 1;
+    pos.y += 1;
 }

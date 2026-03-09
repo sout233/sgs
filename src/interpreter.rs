@@ -24,7 +24,8 @@ pub enum Value {
     Void,
     Array(Rc<RefCell<Vec<Value>>>),
     Closure {
-        params: Vec<String>,
+        /// 前面的是is_mut，后面是参数名称
+        params: Vec<(bool, String)>,
         body: Vec<Spanned<Stmt>>,
         captured_env: Vec<HashMap<String, Rc<RefCell<Variable>>>>,
     },
@@ -334,8 +335,8 @@ impl Interpreter {
                     let old_scopes = std::mem::replace(&mut self.env.scopes, captured_env);
                     self.env.push_scope();
 
-                    for (name, val) in params.into_iter().zip(arg_values) {
-                        self.env.define(name, val, false);
+                    for ((is_mut, name), val) in params.into_iter().zip(arg_values) {
+                        self.env.define(name, val, is_mut);
                     }
 
                     let return_value = self.execute_block(&body).expect("execute_block err");
@@ -458,13 +459,56 @@ impl Interpreter {
                             Err("只有数组可以调用 clear()".to_string())
                         }
                     }
-                    _ => Err(format!("未知的方法: {}", method)),
+                    _ => {
+                        if let Some(func_val) = self.env.get(method) {
+                            if let Value::Closure {
+                                params,
+                                body,
+                                captured_env,
+                            } = func_val
+                            {
+                                if params.len() != args.len() + 1 {
+                                    return Err(format!(
+                                        "UFCS 调用参数数量不匹配: 函数 '{}' 需要 {} 个参数",
+                                        method,
+                                        params.len()
+                                    ));
+                                }
+
+                                let mut arg_values = vec![target_val];
+                                for arg in args {
+                                    arg_values.push(self.eval_expr(arg)?);
+                                }
+
+                                let old_scopes =
+                                    std::mem::replace(&mut self.env.scopes, captured_env);
+                                self.env.push_scope();
+
+                                for ((is_mut, name), val) in params.into_iter().zip(arg_values) {
+                                    self.env.define(name, val, is_mut);
+                                }
+
+                                let return_value =
+                                    self.execute_block(&body).map_err(|(msg, _)| msg)?;
+
+                                self.env.pop_scope();
+                                self.env.scopes = old_scopes;
+
+                                return Ok(return_value);
+                            }
+                        }
+
+                        Err(format!(
+                            "未知的方法，也没有找到可用于 UFCS 的全局函数: {}",
+                            method
+                        ))
+                    }
                 }
             }
             Expr::Closure { params, body } => {
-                let param_names = params.iter().map(|p| p.name.clone()).collect();
+                let param_info = params.iter().map(|p| (p.is_mut, p.name.clone())).collect();
                 Ok(Value::Closure {
-                    params: param_names,
+                    params: param_info,
                     body: body.clone(),
                     captured_env: self.env.scopes.clone(),
                 })

@@ -513,7 +513,11 @@ fn test_advanced_expressions_and_interpolation() {
 
     if let SgsNode::SystemDef(sys) = &ast[0] {
         for func in &sys.functions {
-            let params = func.params.iter().map(|p| p.name.clone()).collect();
+            let params = func
+                .params
+                .iter()
+                .map(|p| (p.is_mut, p.name.clone()))
+                .collect();
 
             let closure_val = sgs::interpreter::Value::Closure {
                 params,
@@ -581,10 +585,22 @@ fn test_array_operations() {
             assert!(res.is_ok(), "数组操作执行失败: {:?}", res.err());
         }
 
-        assert_eq!(vm.env.get_val("first").unwrap(), sgs::interpreter::Value::Number(10.0));
-        assert_eq!(vm.env.get_val("res0").unwrap(), sgs::interpreter::Value::Number(99.0));
-        assert_eq!(vm.env.get_val("res1").unwrap(), sgs::interpreter::Value::Number(25.0));
-        assert_eq!(vm.env.get_val("res2").unwrap(), sgs::interpreter::Value::Number(20.0));
+        assert_eq!(
+            vm.env.get_val("first").unwrap(),
+            sgs::interpreter::Value::Number(10.0)
+        );
+        assert_eq!(
+            vm.env.get_val("res0").unwrap(),
+            sgs::interpreter::Value::Number(99.0)
+        );
+        assert_eq!(
+            vm.env.get_val("res1").unwrap(),
+            sgs::interpreter::Value::Number(25.0)
+        );
+        assert_eq!(
+            vm.env.get_val("res2").unwrap(),
+            sgs::interpreter::Value::Number(20.0)
+        );
     }
 }
 
@@ -626,8 +642,14 @@ fn test_while_loop_with_control_flow() {
             assert!(res.is_ok(), "while 循环执行失败: {:?}", res.err());
         }
 
-        assert_eq!(vm.env.get_val("i").unwrap(), sgs::interpreter::Value::Number(4.0));
-        assert_eq!(vm.env.get_val("sum").unwrap(), sgs::interpreter::Value::Number(7.0));
+        assert_eq!(
+            vm.env.get_val("i").unwrap(),
+            sgs::interpreter::Value::Number(4.0)
+        );
+        assert_eq!(
+            vm.env.get_val("sum").unwrap(),
+            sgs::interpreter::Value::Number(7.0)
+        );
     }
 }
 
@@ -665,7 +687,10 @@ fn test_for_in_loop() {
             assert!(res.is_ok(), "for 循环执行失败: {:?}", res.err());
         }
 
-        assert_eq!(vm.env.get_val("total").unwrap(), sgs::interpreter::Value::Number(40.0));
+        assert_eq!(
+            vm.env.get_val("total").unwrap(),
+            sgs::interpreter::Value::Number(40.0)
+        );
         assert_eq!(vm.env.get_val("val"), None);
     }
 }
@@ -735,4 +760,198 @@ fn test_analyzer_rejects_plus_for_strings() {
 
     let note = err.note.as_ref().unwrap();
     assert!(note.0.contains("SGS 使用 '++'"));
+}
+
+#[test]
+fn test_struct_instantiation_and_deep_assignment() {
+    let script = r#"
+        @type System;
+        @name StructTest;
+
+        struct Vector2 { x: number, y: number }
+        struct Player { pos: Vector2, hp: number }
+
+        fn main() -> void {
+            let mut p = Player {
+                pos: Vector2 { x: 10, y: 20 },
+                hp: 100
+            };
+
+            // 深度修改
+            p.pos.x += 5;
+            p.hp -= 10;
+
+            let final_x = p.pos.x;
+            let final_hp = p.hp;
+        }
+    "#;
+
+    let ast = parse_program(script).unwrap();
+    let mut analyzer = sgs::analyzer::Analyzer::new();
+
+    for node in &ast {
+        match node {
+            SgsNode::StructDef(s) => analyzer.register_struct(s),
+            SgsNode::SystemDef(sys) => analyzer.register_functions(sys),
+            _ => {}
+        }
+    }
+    for node in &ast {
+        if let SgsNode::SystemDef(sys) = node {
+            for func in &sys.functions {
+                analyzer.check_function(func);
+            }
+        }
+    }
+    assert!(analyzer.errors.is_empty(), "静态检查报错: {:?}", analyzer.errors.iter().map(|e| &e.message).collect::<Vec<_>>());
+
+    let mut vm = Interpreter::new();
+    if let SgsNode::SystemDef(sys) = ast.iter().find(|n| matches!(n, SgsNode::SystemDef(_))).unwrap() {
+        let main_func = sys.functions.iter().find(|f| f.name == "main").unwrap();
+        vm.env.push_scope();
+        for stmt in &main_func.statements {
+            let res = vm.eval_stmt(stmt);
+            assert!(res.is_ok(), "结构体测试执行失败: {:?}", res.err());
+        }
+
+        assert_eq!(vm.env.get_val("final_x").unwrap(), Value::Number(15.0));
+        assert_eq!(vm.env.get_val("final_hp").unwrap(), Value::Number(90.0));
+    }
+}
+
+#[test]
+fn test_ufcs_and_mut_parameters() {
+    let script = r#"
+        @type System;
+        @name UFCSTest;
+
+        struct Stats { atk: number }
+
+        fn buff(mut s: Stats, amount: number) -> void {
+            s.atk += amount;
+        }
+
+        fn main() -> void {
+            let mut my_stats = Stats { atk: 10 };
+
+            my_stats.buff(5);
+            my_stats.buff(10);
+
+            let final_atk = my_stats.atk;
+        }
+    "#;
+
+    let ast = parse_program(script).unwrap();
+    let mut analyzer = sgs::analyzer::Analyzer::new();
+    for node in &ast {
+        match node {
+            SgsNode::StructDef(s) => analyzer.register_struct(s),
+            SgsNode::SystemDef(sys) => analyzer.register_functions(sys),
+            _ => {}
+        }
+    }
+    for node in &ast {
+        if let SgsNode::SystemDef(sys) = node {
+            for func in &sys.functions { analyzer.check_function(func); }
+        }
+    }
+    assert!(analyzer.errors.is_empty());
+
+    let mut vm = Interpreter::new();
+    if let SgsNode::SystemDef(sys) = ast.iter().find(|n| matches!(n, SgsNode::SystemDef(_))).unwrap() {
+        for func in &sys.functions {
+            let params = func.params.iter().map(|p| (p.is_mut, p.name.clone())).collect();
+            let closure_val = Value::Closure {
+                params, body: func.statements.clone(), captured_env: vm.env.scopes.clone()
+            };
+            vm.env.define(func.name.clone(), closure_val, false);
+        }
+
+        let main_func = sys.functions.iter().find(|f| f.name == "main").unwrap();
+        vm.env.push_scope();
+        for stmt in &main_func.statements {
+            vm.eval_stmt(stmt).unwrap();
+        }
+
+        // 10 + 5 + 10 = 25
+        assert_eq!(vm.env.get_val("final_atk").unwrap(), Value::Number(25.0));
+    }
+}
+
+#[test]
+fn test_type_casting_as_keyword() {
+    let script = r#"
+        @type System;
+        @name CastTest;
+
+        fn main() -> void {
+            let s = "100" as number;
+            let n = s + 50;           // n = 150
+            let res_str = n as string; // res_str = "150"
+            let is_true = true as number; // is_true = 1
+        }
+    "#;
+
+    let ast = parse_program(script).unwrap();
+    let mut analyzer = sgs::analyzer::Analyzer::new();
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        analyzer.register_functions(sys);
+        for func in &sys.functions { analyzer.check_function(func); }
+    }
+    assert!(analyzer.errors.is_empty());
+
+    let mut vm = Interpreter::new();
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        let main_func = sys.functions.iter().find(|f| f.name == "main").unwrap();
+        vm.env.push_scope();
+        for stmt in &main_func.statements {
+            vm.eval_stmt(stmt).unwrap();
+        }
+
+        assert_eq!(vm.env.get_val("s").unwrap(), Value::Number(100.0));
+        assert_eq!(vm.env.get_val("n").unwrap(), Value::Number(150.0));
+        assert_eq!(vm.env.get_val("res_str").unwrap(), Value::String("150".into()));
+        assert_eq!(vm.env.get_val("is_true").unwrap(), Value::Number(1.0));
+    }
+}
+
+#[test]
+fn test_array_builtin_methods() {
+    let script = r#"
+        @type System;
+        @name ArrayMethodsTest;
+
+        fn main() -> void {
+            let mut arr = [1, 2, 3];
+
+            arr.push(4);          // [1, 2, 3, 4]
+            let l = arr.len();    // 4
+
+            let popped = arr.pop(); // 4, arr = [1, 2, 3]
+
+            arr.remove(0);        // arr = [2, 3]
+            let first = arr[0];   // 2
+        }
+    "#;
+
+    let ast = parse_program(script).unwrap();
+    let mut analyzer = sgs::analyzer::Analyzer::new();
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        analyzer.register_functions(sys);
+        for func in &sys.functions { analyzer.check_function(func); }
+    }
+    assert!(analyzer.errors.is_empty(), "数组方法静态检查失败");
+
+    let mut vm = Interpreter::new();
+    if let SgsNode::SystemDef(sys) = &ast[0] {
+        let main_func = sys.functions.iter().find(|f| f.name == "main").unwrap();
+        vm.env.push_scope();
+        for stmt in &main_func.statements {
+            vm.eval_stmt(stmt).unwrap();
+        }
+
+        assert_eq!(vm.env.get_val("l").unwrap(), Value::Number(4.0));
+        assert_eq!(vm.env.get_val("popped").unwrap(), Value::Number(4.0));
+        assert_eq!(vm.env.get_val("first").unwrap(), Value::Number(2.0));
+    }
 }

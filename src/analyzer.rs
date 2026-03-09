@@ -217,7 +217,7 @@ impl Analyzer {
         for param in &func.params {
             self.define_var(
                 param.name.clone(),
-                false,
+                param.is_mut,
                 Type::from_name(&param.ty),
                 &(0..0),
             );
@@ -852,7 +852,7 @@ impl Analyzer {
                         }
 
                         match &target_ty {
-                            Type::Array(_) | Type::String => target_ty.clone(), // 返回同样的类型
+                            Type::Array(_) | Type::String => target_ty.clone(),
                             _ => {
                                 self.errors.push(StaticCheckError::new(
                                     "类型错误",
@@ -889,7 +889,7 @@ impl Analyzer {
                         }
 
                         if let Type::Array(inner_ty) = target_ty {
-                            *inner_ty // 返回被移除的元素类型
+                            *inner_ty
                         } else {
                             self.errors.push(StaticCheckError::new(
                                 "类型错误",
@@ -977,15 +977,68 @@ impl Analyzer {
                         }
                     }
                     _ => {
+                        let func_ty_opt = self.resolve_var(method).map(|sym| sym.ty.clone());
+
+                        if let Some(Type::Function { params, ret }) = func_ty_opt {
+                            if params.len() != args.len() + 1 {
+                                self.errors.push(StaticCheckError::new(
+                                    "参数数量错误 (UFCS)",
+                                    format!("函数 '{}' 需要 {} 个参数，但通过 UFCS 传入了 {} 个 (含目标对象自身)", method, params.len(), args.len() + 1),
+                                    fallback_span.clone(),
+                                ));
+                                return *ret;
+                            }
+
+                            if target_ty != Type::Unknown
+                                && params[0] != Type::Unknown
+                                && target_ty != params[0]
+                            {
+                                self.errors.push(StaticCheckError::new(
+                                    "类型不匹配 (UFCS)",
+                                    format!(
+                                        "无法将 '{}' 作为第一个参数传给期待 '{}' 的函数 '{}'",
+                                        target_ty, params[0], method
+                                    ),
+                                    fallback_span.clone(),
+                                ));
+                            }
+
+                            for (i, arg) in args.iter().enumerate() {
+                                let arg_ty = self.infer_expr(arg, fallback_span);
+                                let expected_param_ty = &params[i + 1];
+                                if arg_ty != Type::Unknown
+                                    && *expected_param_ty != Type::Unknown
+                                    && arg_ty != *expected_param_ty
+                                {
+                                    self.errors.push(StaticCheckError::new(
+                                        "参数类型错误",
+                                        format!(
+                                            "第 {} 个参数期待 '{}'，但得到了 '{}'",
+                                            i + 2,
+                                            expected_param_ty,
+                                            arg_ty
+                                        ),
+                                        fallback_span.clone(),
+                                    ));
+                                }
+                            }
+
+                            return *ret;
+                        }
+
                         self.errors.push(StaticCheckError::new(
                             "方法不存在",
-                            format!("找不到方法: '{}'", method),
+                            format!(
+                                "找不到内置方法，也没有找到名为 '{}' 的全局函数以进行 UFCS 调用",
+                                method
+                            ),
                             fallback_span.clone(),
                         ));
                         Type::Unknown
                     }
-                }
-            }
+                } // match method.as_str()
+            } // Expr::MethodCall
+
             Expr::StructInit { name, fields } => {
                 let struct_blueprint = match self.struct_defs.get(name) {
                     Some(bp) => bp.clone(),
@@ -1040,6 +1093,7 @@ impl Analyzer {
 
                 Type::Struct(name.clone())
             }
+
             Expr::Cast {
                 expr: cast_expr,
                 ty_name,
@@ -1072,7 +1126,8 @@ impl Analyzer {
                     }
                 }
             }
-            _ => Type::Unknown, // TODO: 闭包等复杂的
+
+            _ => Type::Unknown,
         }
     }
 }
