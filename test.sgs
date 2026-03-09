@@ -6,7 +6,7 @@ struct PlayerData {
     name: string,
 }
 
-fn main() -> void {
+fn _main() -> void {
     let a = 100;
     println("First a:", a);
 
@@ -67,5 +67,40 @@ fn main() -> void {
     };
     println(p.name);
     p.name = "guy";
-    println(p.name);
+
+    let num = (4);
+    println("num:", num);
+    println(
+        p.hp,
+        "HP: " ++ p.name
+    );
+}
+
+@type System;
+@name Test2;
+
+struct Vector2 {
+    x: float,
+    y: float,
+}
+
+struct Player {
+    pos: Vector2
+}
+
+fn main() -> void {
+    let mut player = Player {
+        pos: Vector2 { x: 0, y: 0 }
+    };
+
+    println(player);
+    player.pos = just_move(player.pos);
+    println(player);
+}
+
+fn just_move(pos: Vector2) -> Vector2 {
+    Vector2 {
+        x: pos.x + 1,
+        y: pos.y + 1
+    }
 }

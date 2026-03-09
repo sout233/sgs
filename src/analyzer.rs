@@ -22,7 +22,7 @@ impl Type {
             "string" => Type::String,
             "void" => Type::Void,
             "bool" => Type::Bool,
-            _ => Type::Unknown,
+            custom_type => Type::Struct(custom_type.to_string()),
         }
     }
 }
