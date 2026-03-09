@@ -43,6 +43,8 @@ fn main() -> void {
 
     stats.pop();
     println("pop");
+    stats.remove(0);
+    stats.insert(1, 2);
 
     for hp in stats {
         stats.push(1);

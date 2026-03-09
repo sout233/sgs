@@ -339,6 +339,83 @@ impl Interpreter {
                             Err("只有数组可以调用 pop()".to_string())
                         }
                     }
+                    "slice" => {
+                        let start_val = self.eval_expr(&args[0])?;
+                        let end_val = self.eval_expr(&args[1])?;
+
+                        let (start, end) = match (start_val, end_val) {
+                            (Value::Number(s), Value::Number(e)) => (s as usize, e as usize),
+                            _ => return Err("slice 的参数必须是数字".to_string()),
+                        };
+
+                        match target_val {
+                            Value::Array(arr) => {
+                                let b = arr.borrow();
+                                let len = b.len();
+                                let s = start.min(len);
+                                let e = end.min(len).max(s);
+                                Ok(Value::Array(std::rc::Rc::new(std::cell::RefCell::new(
+                                    b[s..e].to_vec(),
+                                ))))
+                            }
+                            Value::String(str) => {
+                                let chars: Vec<char> = str.chars().collect();
+                                let len = chars.len();
+                                let s = start.min(len);
+                                let e = end.min(len).max(s);
+                                Ok(Value::String(chars[s..e].iter().collect()))
+                            }
+                            _ => Err("只有数组和字符串可以调用 slice()".to_string()),
+                        }
+                    }
+                    "remove" => {
+                        let idx_val = self.eval_expr(&args[0])?;
+                        let idx = if let Value::Number(n) = idx_val {
+                            n as usize
+                        } else {
+                            return Err("索引必须是数字".to_string());
+                        };
+
+                        if let Value::Array(arr) = target_val {
+                            let mut b = arr.borrow_mut();
+                            if idx < b.len() {
+                                Ok(b.remove(idx))
+                            } else {
+                                Err(format!("移除失败：索引 {} 越界 (长度 {})", idx, b.len()))
+                            }
+                        } else {
+                            Err("只有数组可以调用 remove()".to_string())
+                        }
+                    }
+                    "insert" => {
+                        let idx_val = self.eval_expr(&args[0])?;
+                        let val = self.eval_expr(&args[1])?;
+                        let idx = if let Value::Number(n) = idx_val {
+                            n as usize
+                        } else {
+                            return Err("索引必须是数字".to_string());
+                        };
+
+                        if let Value::Array(arr) = target_val {
+                            let mut b = arr.borrow_mut();
+                            if idx <= b.len() {
+                                b.insert(idx, val);
+                                Ok(Value::Void)
+                            } else {
+                                Err(format!("插入失败：索引 {} 越界 (长度 {})", idx, b.len()))
+                            }
+                        } else {
+                            Err("只有数组可以调用 insert()".to_string())
+                        }
+                    }
+                    "clear" => {
+                        if let Value::Array(arr) = target_val {
+                            arr.borrow_mut().clear();
+                            Ok(Value::Void)
+                        } else {
+                            Err("只有数组可以调用 clear()".to_string())
+                        }
+                    }
                     _ => Err(format!("未知的方法: {}", method)),
                 }
             }

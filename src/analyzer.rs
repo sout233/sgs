@@ -770,6 +770,153 @@ impl Analyzer {
                             Type::Unknown
                         }
                     }
+                    "slice" => {
+                        if args.len() != 2 {
+                            self.errors.push(StaticCheckError::new(
+                                "参数错误",
+                                "slice() 需要 2 个参数 (start, end)",
+                                fallback_span.clone(),
+                            ));
+                            return Type::Unknown;
+                        }
+                        let start_ty = self.infer_expr(&args[0], fallback_span);
+                        let end_ty = self.infer_expr(&args[1], fallback_span);
+
+                        if (start_ty != Type::Unknown && start_ty != Type::Number)
+                            || (end_ty != Type::Unknown && end_ty != Type::Number)
+                        {
+                            self.errors.push(StaticCheckError::new(
+                                "参数类型错误",
+                                "slice() 的参数必须是数字",
+                                fallback_span.clone(),
+                            ));
+                        }
+
+                        match &target_ty {
+                            Type::Array(_) | Type::String => target_ty.clone(), // 返回同样的类型
+                            _ => {
+                                self.errors.push(StaticCheckError::new(
+                                    "类型错误",
+                                    format!("类型 '{}' 没有 slice() 方法", target_ty),
+                                    fallback_span.clone(),
+                                ));
+                                Type::Unknown
+                            }
+                        }
+                    }
+                    "remove" => {
+                        if args.len() != 1 {
+                            self.errors.push(StaticCheckError::new(
+                                "参数错误",
+                                "remove() 需要 1 个参数 (index)",
+                                fallback_span.clone(),
+                            ));
+                            return Type::Unknown;
+                        }
+
+                        if let Expr::Path(path) = &**target {
+                            if self.iterating_vars.contains(&path[0]) {
+                                self.warnings.push(StaticCheckWarning::new("遍历中移除元素", format!("在 for 循环内部调用 '{}.remove()'。注意：循环长度已锁定，这可能导致逻辑偏移。", path[0]), fallback_span.clone()));
+                            }
+                        }
+
+                        let idx_ty = self.infer_expr(&args[0], fallback_span);
+                        if idx_ty != Type::Unknown && idx_ty != Type::Number {
+                            self.errors.push(StaticCheckError::new(
+                                "参数类型错误",
+                                "remove() 的索引必须是数字",
+                                fallback_span.clone(),
+                            ));
+                        }
+
+                        if let Type::Array(inner_ty) = target_ty {
+                            *inner_ty // 返回被移除的元素类型
+                        } else {
+                            self.errors.push(StaticCheckError::new(
+                                "类型错误",
+                                format!("只有数组有 remove() 方法，但得到了 '{}'", target_ty),
+                                fallback_span.clone(),
+                            ));
+                            Type::Unknown
+                        }
+                    }
+                    "insert" => {
+                        if args.len() != 2 {
+                            self.errors.push(StaticCheckError::new(
+                                "参数错误",
+                                "insert() 需要 2 个参数 (index, value)",
+                                fallback_span.clone(),
+                            ));
+                            return Type::Unknown;
+                        }
+
+                        if let Expr::Path(path) = &**target {
+                            if self.iterating_vars.contains(&path[0]) {
+                                self.warnings.push(StaticCheckWarning::new(
+                                    "遍历中插入元素",
+                                    format!("在 for 循环内部调用 '{}.insert()'。", path[0]),
+                                    fallback_span.clone(),
+                                ));
+                            }
+                        }
+
+                        let idx_ty = self.infer_expr(&args[0], fallback_span);
+                        if idx_ty != Type::Unknown && idx_ty != Type::Number {
+                            self.errors.push(StaticCheckError::new(
+                                "参数类型错误",
+                                "insert() 的索引必须是数字",
+                                fallback_span.clone(),
+                            ));
+                        }
+
+                        if let Type::Array(inner_ty) = &target_ty {
+                            let arg_ty = self.infer_expr(&args[1], fallback_span);
+                            if arg_ty != Type::Unknown
+                                && **inner_ty != Type::Unknown
+                                && arg_ty != **inner_ty
+                            {
+                                self.errors.push(StaticCheckError::new(
+                                    "类型不匹配",
+                                    format!("无法将 '{}' 插入到 '{}' 的数组中", arg_ty, inner_ty),
+                                    fallback_span.clone(),
+                                ));
+                            }
+                            Type::Void
+                        } else {
+                            self.errors.push(StaticCheckError::new(
+                                "类型错误",
+                                format!("只有数组有 insert() 方法，得到了 '{}'", target_ty),
+                                fallback_span.clone(),
+                            ));
+                            Type::Unknown
+                        }
+                    }
+                    "clear" => {
+                        if args.len() != 0 {
+                            self.errors.push(StaticCheckError::new(
+                                "参数错误",
+                                "clear() 不需要参数",
+                                fallback_span.clone(),
+                            ));
+                        }
+
+                        if let Expr::Path(path) = &**target {
+                            if self.iterating_vars.contains(&path[0]) {
+                                self.warnings.push(StaticCheckWarning::new("遍历中清空数组", format!("在 for 循环内部调用 '{}.clear()'。当前的遍历会继续基于旧的快照执行完。", path[0]), fallback_span.clone()));
+                            }
+                        }
+
+                        if let Type::Array(_) = target_ty {
+                            Type::Void
+                        } else {
+                            self.errors.push(StaticCheckError::new(
+                                "类型错误",
+                                format!("只有数组有 clear() 方法，得到了 '{}'", target_ty),
+                                fallback_span.clone(),
+                            ));
+                            Type::Unknown
+                        }
+                    }
                     _ => {
                         self.errors.push(StaticCheckError::new(
                             "方法不存在",
