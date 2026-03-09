@@ -66,7 +66,7 @@ impl Default for Environment {
 impl Environment {
     pub fn new() -> Self {
         Self {
-            scopes: vec![HashMap::new()], // 默认放入一个全局作用域
+            scopes: vec![HashMap::new()],
         }
     }
 
@@ -222,7 +222,6 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(arr))))
             }
-            // ... 在 eval_expr 中 ...
             Expr::Index { target, index } => {
                 let target_val = self.eval_expr(target)?;
                 let index_val = self.eval_expr(index)?;
@@ -306,6 +305,43 @@ impl Interpreter {
                 }
                 Err("调用的目标不是一个可执行的函数或闭包".to_string())
             }
+            Expr::MethodCall {
+                target,
+                method,
+                args,
+            } => {
+                let target_val = self.eval_expr(target)?;
+
+                match method.as_str() {
+                    "len" => match target_val {
+                        Value::Array(arr) => Ok(Value::Number(arr.borrow().len() as f64)),
+                        Value::String(s) => Ok(Value::Number(s.len() as f64)),
+                        _ => Err("只有数组和字符串可以调用 len()".to_string()),
+                    },
+                    "push" => {
+                        if let Value::Array(arr) = target_val {
+                            let arg_val = self.eval_expr(&args[0])?;
+                            arr.borrow_mut().push(arg_val);
+                            Ok(Value::Void)
+                        } else {
+                            Err("只有数组可以调用 push()".to_string())
+                        }
+                    }
+                    "pop" => {
+                        if let Value::Array(arr) = target_val {
+                            let mut arr_ref = arr.borrow_mut();
+                            if let Some(val) = arr_ref.pop() {
+                                Ok(val)
+                            } else {
+                                Err("无法从空数组中 pop 元素".to_string())
+                            }
+                        } else {
+                            Err("只有数组可以调用 pop()".to_string())
+                        }
+                    }
+                    _ => Err(format!("未知的方法: {}", method)),
+                }
+            }
             Expr::Closure { params, body } => {
                 let param_names = params.iter().map(|p| p.name.clone()).collect();
                 Ok(Value::Closure {
@@ -383,7 +419,9 @@ impl Interpreter {
                         let elem_val = arr_ref[idx].clone();
                         let new_val = match (elem_val, op.as_str(), right_val) {
                             (_, "=", v) => v,
-                            (Value::String(l), "++=", Value::String(r)) => Value::String(format!("{}{}", l, r)),
+                            (Value::String(l), "++=", Value::String(r)) => {
+                                Value::String(format!("{}{}", l, r))
+                            }
                             (Value::Number(l), "+=", Value::Number(r)) => Value::Number(l + r),
                             (Value::Number(l), "-=", Value::Number(r)) => Value::Number(l - r),
                             (Value::Number(l), "*=", Value::Number(r)) => Value::Number(l * r),
@@ -410,7 +448,9 @@ impl Interpreter {
 
                 let new_val = match (current_val, op.as_str(), right_val) {
                     (_, "=", v) => v,
-                    (Value::String(l), "++=", Value::String(r)) => Value::String(format!("{}{}", l, r)),
+                    (Value::String(l), "++=", Value::String(r)) => {
+                        Value::String(format!("{}{}", l, r))
+                    }
                     (Value::Number(l), "+=", Value::Number(r)) => Value::Number(l + r),
                     (Value::Number(l), "-=", Value::Number(r)) => Value::Number(l - r),
                     (Value::Number(l), "*=", Value::Number(r)) => Value::Number(l * r),

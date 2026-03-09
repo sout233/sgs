@@ -245,16 +245,20 @@ fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Spanned<Stmt> {
             }
         }
         Rule::for_stmt => {
-                    let mut parts = inner.into_inner();
-                    let item_name = parts.next().unwrap().as_str().to_string();
-                    let iterable = parse_expr(parts.next().unwrap());
-                    let body = parse_block(parts.next().unwrap());
+            let mut parts = inner.into_inner();
+            let item_name = parts.next().unwrap().as_str().to_string();
+            let iterable = parse_expr(parts.next().unwrap());
+            let body = parse_block(parts.next().unwrap());
 
-                    Spanned {
-                        node: Stmt::For { item_name, iterable, body },
-                        span: byte_range,
-                    }
-                }
+            Spanned {
+                node: Stmt::For {
+                    item_name,
+                    iterable,
+                    body,
+                },
+                span: byte_range,
+            }
+        }
         Rule::break_stmt => Spanned {
             node: Stmt::Break,
             span: byte_range,
@@ -366,17 +370,30 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
             Expr::Closure { params, body }
         }
         Rule::call => {
-            let mut call_inner = inner.into_inner();
-            let path_pair = call_inner.next().unwrap();
-            let target = Box::new(Expr::Path(
-                path_pair
-                    .into_inner()
-                    .map(|i| i.as_str().to_string())
-                    .collect(),
-            ));
-            let args = call_inner.map(parse_expr).collect();
-            Expr::Call { target, args }
-        }
+                    let mut parts = inner.into_inner();
+
+                    let path_pair = parts.next().unwrap();
+                    let mut path: Vec<String> = path_pair.into_inner().map(|i| i.as_str().to_string()).collect();
+
+                    let mut args = Vec::new();
+                    for p in parts {
+                        args.push(parse_expr(p));
+                    }
+
+                    if path.len() > 1 {
+                        let method = path.pop().unwrap();
+                        return Expr::MethodCall {
+                            target: Box::new(Expr::Path(path)),
+                            method,
+                            args,
+                        };
+                    }
+
+                    Expr::Call {
+                        target: Box::new(Expr::Path(path)),
+                        args,
+                    }
+                }
         Rule::expr => parse_expr(inner),
         Rule::interp_string => {
             let mut parts = Vec::new();
@@ -389,19 +406,26 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
             }
             Expr::StringInterp(parts)
         }
-                Rule::array_lit => {
-                    let elements = inner.into_inner().map(parse_expr).collect();
-                    Expr::Array(elements)
-                }
-                Rule::index_access => {
-                    let mut inner_parts = inner.into_inner();
-                    let path = Expr::Path(inner_parts.next().unwrap().into_inner().map(|i| i.as_str().to_string()).collect());
-                    let index = parse_expr(inner_parts.next().unwrap());
-                    Expr::Index {
-                        target: Box::new(path),
-                        index: Box::new(index),
-                    }
-                }
+        Rule::array_lit => {
+            let elements = inner.into_inner().map(parse_expr).collect();
+            Expr::Array(elements)
+        }
+        Rule::index_access => {
+            let mut inner_parts = inner.into_inner();
+            let path = Expr::Path(
+                inner_parts
+                    .next()
+                    .unwrap()
+                    .into_inner()
+                    .map(|i| i.as_str().to_string())
+                    .collect(),
+            );
+            let index = parse_expr(inner_parts.next().unwrap());
+            Expr::Index {
+                target: Box::new(path),
+                index: Box::new(index),
+            }
+        }
         _ => unreachable!("parse_factor 爆了: {:?}", inner.as_rule()),
     }
 }

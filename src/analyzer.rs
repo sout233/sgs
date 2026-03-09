@@ -621,6 +621,98 @@ impl Analyzer {
                 }
                 Type::Unknown
             }
+            Expr::MethodCall {
+                target,
+                method,
+                args,
+            } => {
+                let target_ty = self.infer_expr(target, fallback_span);
+                if target_ty == Type::Unknown {
+                    return Type::Unknown;
+                }
+
+                match method.as_str() {
+                    "len" => {
+                        if args.len() != 0 {
+                            self.errors.push(StaticCheckError::new(
+                                "参数错误",
+                                "len() 不需要参数",
+                                fallback_span.clone(),
+                            ));
+                        }
+                        match target_ty {
+                            Type::Array(_) | Type::String => Type::Number,
+                            _ => {
+                                self.errors.push(StaticCheckError::new(
+                                    "类型错误",
+                                    format!("类型 '{}' 没有 len() 方法", target_ty),
+                                    fallback_span.clone(),
+                                ));
+                                Type::Unknown
+                            }
+                        }
+                    }
+                    "push" => {
+                        if args.len() != 1 {
+                            self.errors.push(StaticCheckError::new(
+                                "参数错误",
+                                "push() 需要 1 个参数",
+                                fallback_span.clone(),
+                            ));
+                            return Type::Unknown;
+                        }
+                        if let Type::Array(inner_ty) = &target_ty {
+                            let arg_ty = self.infer_expr(&args[0], fallback_span);
+                            if arg_ty != Type::Unknown
+                                && **inner_ty != Type::Unknown
+                                && arg_ty != **inner_ty
+                            {
+                                self.errors.push(StaticCheckError::new(
+                                    "类型不匹配",
+                                    format!("无法将 '{}' push 到 '{}' 的数组中", arg_ty, inner_ty),
+                                    fallback_span.clone(),
+                                ));
+                            }
+                            Type::Void
+                        } else {
+                            self.errors.push(StaticCheckError::new(
+                                "类型错误",
+                                format!("只有数组有 push() 方法，但得到了 '{}'", target_ty),
+                                fallback_span.clone(),
+                            ));
+                            Type::Unknown
+                        }
+                    }
+                    "pop" => {
+                        if args.len() != 0 {
+                            self.errors.push(StaticCheckError::new(
+                                "参数错误",
+                                "pop() 不需要参数",
+                                fallback_span.clone(),
+                            ));
+                            return Type::Unknown;
+                        }
+                        if let Type::Array(inner_ty) = target_ty {
+                            *inner_ty
+                        } else {
+                            self.errors.push(StaticCheckError::new(
+                                "类型错误",
+                                format!("只有数组有 pop() 方法，但得到了 '{}'", target_ty),
+                                fallback_span.clone(),
+                            ));
+                            Type::Unknown
+                        }
+                    }
+                    _ => {
+                        self.errors.push(StaticCheckError::new(
+                            "方法不存在",
+                            format!("找不到方法: '{}'", method),
+                            fallback_span.clone(),
+                        ));
+                        Type::Unknown
+                    }
+                }
+            }
             _ => Type::Unknown, // TODO: 闭包等复杂的
         }
     }

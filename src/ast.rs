@@ -112,10 +112,10 @@ pub enum Stmt {
     Continue,
     /// for 循环
     For {
-            item_name: String,
-            iterable: Expr,
-            body: Vec<Spanned<Stmt>>,
-        },
+        item_name: String,
+        iterable: Expr,
+        body: Vec<Spanned<Stmt>>,
+    },
 }
 
 /// 赋值语句
@@ -148,6 +148,15 @@ pub enum Expr {
     /// 函数调用
     Call {
         target: Box<Expr>,
+        args: Vec<Expr>,
+    },
+    /// 方法调用
+    MethodCall {
+        /// 点号左边的主体（恩情！）
+        target: Box<Expr>,
+        /// 点号右边的方法名
+        method: String,
+        /// 括号里的参数
         args: Vec<Expr>,
     },
     /// 二元运算符表达式

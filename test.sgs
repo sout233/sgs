@@ -41,6 +41,14 @@ fn main() -> void {
         println("HP:", hp);
     }
 
+    stats.pop();
+    println("pop");
+
+    for hp in stats {
+        stats.push(1);
+        println("HP:", hp);
+    }
+
     println("IM" ++ "GAY");
     let mut str = "what is your ";
     str ++= "name?";
