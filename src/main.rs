@@ -1,6 +1,6 @@
 /// 可能是运行时，可以运行一个sgs文件
 // main.rs
-use sgs::interpreter::Interpreter;
+use sgs::interpreter::{Interpreter, Value};
 use sgs::parse_program;
 use sgs::{analyzer::Analyzer, ast::SgsNode};
 use std::fs;
@@ -89,6 +89,7 @@ fn main() {
 
     for node in &ast {
         match node {
+            SgsNode::ExternFunctionDef(ext_def) => analyzer.register_extern_function(ext_def),
             SgsNode::StructDef(s_def) => {
                 analyzer.register_struct(s_def);
             }
@@ -202,6 +203,25 @@ fn main() {
 
     let mut vm = Interpreter::new();
     let mut executed = false;
+
+    vm.register_native_fn("get_time", |_args| {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let t = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        Ok(Value::Number(t))
+    });
+
+    vm.register_native_fn("debug_log", |args| {
+        if let Some(Value::String(msg)) = args.get(0) {
+            println!("\x1b[32m[SGS] {}\x1b[0m", msg);
+            Ok(Value::Void)
+        } else {
+            Err("debug_log 需要一个 string 参数".to_string())
+        }
+    });
+
     for node in ast {
         if let SgsNode::SystemDef(sys) = node {
             for func in &sys.functions {

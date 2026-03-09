@@ -138,6 +138,25 @@ impl Analyzer {
         self.struct_defs.insert(struct_def.name.clone(), fields);
     }
 
+    pub fn register_extern_function(&mut self, func: &ExternFunctionDef) {
+        let mut param_types = Vec::new();
+        for p in &func.params {
+            param_types.push(Type::from_name(&p.ty));
+        }
+
+        let ret_ty = match &func.return_ty {
+            Some(ty_str) => Type::from_name(ty_str),
+            None => Type::Void,
+        };
+
+        let func_ty = Type::Function {
+            params: param_types,
+            ret: Box::new(ret_ty),
+        };
+
+        self.define_var(func.name.clone(), false, func_ty, &(0..0));
+    }
+
     fn push_scope(&mut self) {
         self.scopes.push(HashMap::new());
     }

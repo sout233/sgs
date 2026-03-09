@@ -21,7 +21,7 @@ type_name = {
 struct_field_def = { ident ~ ":" ~ type_name }
 struct_def = { "struct" ~ ident ~ "{" ~ (struct_field_def ~ ("," ~ struct_field_def)* ~ ","?)? ~ "}" }
 
-stmt = { annotation | mount_stmt | param_stmt | require_stmt | fn_stmt | struct_def }
+stmt = { annotation | mount_stmt | param_stmt | require_stmt | extern_fn_stmt | fn_stmt | struct_def }
 
 annotation   = { "@" ~ ident ~ ident ~ semicolon }
 mount_stmt   = { "mount" ~ ident ~ semicolon }
@@ -35,6 +35,8 @@ fn_params = { (fn_param ~ ("," ~ fn_param)*)? }
 
 fn_stmt   = { "fn" ~ ident ~ "(" ~ fn_params ~ ")" ~ return_ty? ~ block }
 return_ty = { "->" ~ type_name }
+
+extern_fn_stmt = { "extern" ~ "fn" ~ ident ~ "(" ~ fn_params ~ ")" ~ return_ty? ~ semicolon }
 
 block = { "{" ~ block_stmt* ~ expr? ~ "}" }
 

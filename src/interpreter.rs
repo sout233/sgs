@@ -3,6 +3,21 @@
 use crate::ast::*;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+#[derive(Clone)]
+pub struct NativeFunc(pub Rc<dyn Fn(Vec<Value>) -> Result<Value, String>>);
+
+impl PartialEq for NativeFunc {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::fmt::Debug for NativeFunc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<native_host_function>")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
     pub value: Value,
@@ -33,6 +48,7 @@ pub enum Value {
         name: String,
         fields: Rc<RefCell<HashMap<String, Value>>>,
     },
+    NativeFunction(NativeFunc),
 }
 
 impl std::fmt::Display for Value {
@@ -67,6 +83,7 @@ impl std::fmt::Display for Value {
                 }
                 write!(f, " }}")
             }
+            Value::NativeFunction(native_func) => write!(f, "{:?}", native_func),
         }
     }
 }
@@ -316,6 +333,14 @@ impl Interpreter {
                 }
 
                 let target_val = self.eval_expr(target)?;
+
+                if let Value::NativeFunction(native_fn) = target_val {
+                    let mut arg_values = Vec::new();
+                    for arg in args {
+                        arg_values.push(self.eval_expr(arg)?);
+                    }
+                    return (native_fn.0)(arg_values);
+                }
 
                 if let Value::Closure {
                     params,
@@ -844,6 +869,20 @@ impl Interpreter {
             Stmt::Break => Ok(ControlFlow::Break),
             Stmt::Continue => Ok(ControlFlow::Continue),
         }
+    }
+
+    pub fn register_native_fn<F>(&mut self, name: &str, func: F)
+    where
+        F: Fn(Vec<Value>) -> Result<Value, String> + 'static,
+    {
+        let native_val = Value::NativeFunction(NativeFunc(Rc::new(func)));
+        self.env.scopes[0].insert(
+            name.to_string(),
+            Rc::new(RefCell::new(Variable {
+                value: native_val,
+                is_mut: false,
+            })),
+        );
     }
 
     /// 运行整个函数体

@@ -138,6 +138,24 @@ pub fn parse_program(source: &str) -> Result<Vec<SgsNode>, pest::error::Error<Ru
 
                         ast_nodes.push(SgsNode::StructDef(StructDef { name, fields }));
                     }
+                    Rule::extern_fn_stmt => {
+                        let mut inner = stmt_inner.into_inner();
+                        let fn_name = inner.next().unwrap().as_str();
+
+                        let params_pair = inner.next().unwrap();
+                        let params = parse_fn_params(params_pair);
+
+                        let mut return_ty = None;
+                        if let Some(ret_pair) = inner.next() {
+                            return_ty = Some(ret_pair.as_str().replace(" ", "").replace("->", ""));
+                        }
+
+                        ast_nodes.push(SgsNode::ExternFunctionDef(ExternFunctionDef {
+                            name: fn_name.to_string(),
+                            params,
+                            return_ty,
+                        }));
+                    }
                     _ => {}
                 }
             }

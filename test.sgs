@@ -88,7 +88,13 @@ struct Player {
     pos: Vector2
 }
 
+extern fn get_time() -> number;
+extern fn debug_log(msg: string) -> void;
+
 fn main() -> void {
+    let time = get_time();
+    debug_log("now time: " ++ (time as string));
+
     let mut player = Player {
         pos: Vector2 { x: 0, y: 0 }
     };

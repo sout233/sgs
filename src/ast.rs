@@ -17,6 +17,7 @@ pub enum SgsNode {
     ComponentDef(ComponentDef),
     SystemDef(SystemDef),
     StructDef(StructDef),
+    ExternFunctionDef(ExternFunctionDef),
 }
 
 /// Entity 定义
@@ -67,6 +68,14 @@ pub struct FunctionDef {
     pub return_ty: Option<String>,
     /// 函数体里的东西
     pub statements: Vec<Spanned<Stmt>>,
+}
+
+///
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternFunctionDef {
+    pub name: String,
+    pub params: Vec<FnParam>,
+    pub return_ty: Option<String>,
 }
 
 /// 结构体定义
