@@ -288,12 +288,22 @@ fn parse_stmt(pair: pest::iterators::Pair<Rule>) -> Spanned<Stmt> {
         }
         Rule::for_stmt => {
             let mut parts = inner.into_inner();
-            let item_name = parts.next().unwrap().as_str().to_string();
+            let mut is_mut = false;
+
+            let mut next_pair = parts.next().unwrap();
+
+            if next_pair.as_rule() == Rule::is_mut {
+                is_mut = true;
+                next_pair = parts.next().unwrap();
+            }
+
+            let item_name = next_pair.as_str().to_string();
             let iterable = parse_expr(parts.next().unwrap());
             let body = parse_block(parts.next().unwrap());
 
             Spanned {
                 node: Stmt::For {
+                    is_mut,
                     item_name,
                     iterable,
                     body,

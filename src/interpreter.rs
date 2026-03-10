@@ -898,6 +898,7 @@ impl Interpreter {
                 Ok(ControlFlow::None)
             }
             Stmt::For {
+                is_mut,
                 item_name,
                 iterable,
                 body,
@@ -916,7 +917,7 @@ impl Interpreter {
 
                 for elem in elements {
                     self.env.push_scope();
-                    self.env.define(item_name.clone(), elem, false);
+                    self.env.define(item_name.clone(), elem, *is_mut);
 
                     let mut flow = ControlFlow::None;
                     for s in body {

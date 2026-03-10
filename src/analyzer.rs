@@ -186,7 +186,7 @@ impl Analyzer {
         self.scopes.pop();
     }
 
-    fn define_var(&mut self, name: String, is_mut: bool, ty: Type, span: &Span) {
+    pub fn define_var(&mut self, name: String, is_mut: bool, ty: Type, span: &Span) {
         let current_scope = self.scopes.last_mut().unwrap();
         current_scope.insert(
             name,
@@ -467,6 +467,7 @@ impl Analyzer {
                 self.loop_depth -= 1; // 离开循环
             }
             Stmt::For {
+                is_mut,
                 item_name,
                 iterable,
                 body,
@@ -489,7 +490,7 @@ impl Analyzer {
                 self.loop_depth += 1;
                 self.push_scope();
 
-                self.define_var(item_name.clone(), false, item_ty, span);
+                self.define_var(item_name.clone(), *is_mut, item_ty, span);
 
                 let mut locked_var = None;
                 if let Expr::Path(path) = iterable {

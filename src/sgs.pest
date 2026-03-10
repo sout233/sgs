@@ -73,7 +73,7 @@ path = { ident ~ ("." ~ ident)* }
 bool_lit = { "true" | "false" }
 
 while_stmt    = { "while" ~ expr ~ block }
-for_stmt      = { "for" ~ ident ~ "in" ~ expr ~ block }
+for_stmt = { "for" ~ is_mut? ~ ident ~ "in" ~ expr ~ block }
 break_stmt    = { "break" ~ semicolon }
 continue_stmt = { "continue" ~ semicolon }
 

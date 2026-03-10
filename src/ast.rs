@@ -132,6 +132,7 @@ pub enum Stmt {
     Continue,
     /// for 循环
     For {
+        is_mut: bool,
         item_name: String,
         iterable: Expr,
         body: Vec<Spanned<Stmt>>,

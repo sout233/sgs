@@ -955,3 +955,93 @@ fn test_array_builtin_methods() {
         assert_eq!(vm.env.get_val("first").unwrap(), Value::Number(2.0));
     }
 }
+
+#[test]
+fn test_ecs_engine_bridge() {
+    let script = r#"
+        @type System;
+        @name MovementSystem;
+
+        fn _process() -> void {
+            for mut pos in __query_Position {
+                pos.x += 1.0;
+                pos.y -= 0.5;
+            }
+        }
+    "#;
+
+    let ast = sgs::parse_program(script).unwrap();
+    let mut analyzer = sgs::analyzer::Analyzer::new();
+
+    analyzer.define_var(
+        "__query_Position".to_string(),
+        false,
+        sgs::analyzer::Type::Array(Box::new(sgs::analyzer::Type::Any)), // 宽容类型
+        &(0..0)
+    );
+
+    if let sgs::ast::SgsNode::SystemDef(sys) = &ast[0] {
+        analyzer.register_functions(sys);
+        for func in &sys.functions { analyzer.check_function(func); }
+    }
+    assert!(analyzer.errors.is_empty(), "静态检查失败: {:?}", analyzer.errors.iter().map(|e| &e.message).collect::<Vec<_>>());
+
+    #[derive(Debug, Clone, PartialEq)]
+    struct Position { x: f64, y: f64 }
+
+    let mut engine_world = vec![
+        Position { x: 0.0, y: 0.0 },
+        Position { x: 10.0, y: 20.0 },
+    ];
+
+    let mut sgs_array = Vec::new();
+    for pos in &engine_world {
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("x".to_string(), sgs::interpreter::Value::Number(pos.x));
+        fields.insert("y".to_string(), sgs::interpreter::Value::Number(pos.y));
+
+        sgs_array.push(sgs::interpreter::Value::Struct {
+            name: "Position".to_string(),
+            fields: std::rc::Rc::new(std::cell::RefCell::new(fields)),
+        });
+    }
+    let injected_array = sgs::interpreter::Value::Array(std::rc::Rc::new(std::cell::RefCell::new(sgs_array)));
+
+    let mut vm = sgs::interpreter::Interpreter::new();
+
+    vm.env.scopes[0].insert(
+        "__query_Position".to_string(),
+        std::rc::Rc::new(std::cell::RefCell::new(sgs::interpreter::Variable {
+            value: injected_array.clone(),
+            is_mut: false,
+        }))
+    );
+
+    if let sgs::ast::SgsNode::SystemDef(sys) = &ast[0] {
+        let process_func = sys.functions.iter().find(|f| f.name == "_process").unwrap();
+        vm.env.push_scope();
+        for stmt in &process_func.statements {
+            vm.eval_stmt(stmt).unwrap();
+        }
+        vm.env.pop_scope();
+    }
+
+    if let sgs::interpreter::Value::Array(arr_rc) = injected_array {
+        let arr = arr_rc.borrow();
+        for (i, val) in arr.iter().enumerate() {
+            if let sgs::interpreter::Value::Struct { fields, .. } = val {
+                let map = fields.borrow();
+                let new_x = if let sgs::interpreter::Value::Number(n) = map.get("x").unwrap() { *n } else { 0.0 };
+                let new_y = if let sgs::interpreter::Value::Number(n) = map.get("y").unwrap() { *n } else { 0.0 };
+
+                engine_world[i].x = new_x;
+                engine_world[i].y = new_y;
+            }
+        }
+    }
+
+    assert_eq!(engine_world[0], Position { x: 1.0, y: -0.5 });
+    assert_eq!(engine_world[1], Position { x: 11.0, y: 19.5 });
+
+    println!("OK");
+}
