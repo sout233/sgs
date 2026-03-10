@@ -205,4 +205,6 @@ pub enum Expr {
         expr: Box<Expr>,
         ty_name: String,
     },
+    /// 字典
+    Dict(Vec<(String, Box<Expr>)>),
 }

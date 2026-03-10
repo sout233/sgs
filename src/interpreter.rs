@@ -38,6 +38,7 @@ pub enum Value {
     Bool(bool),
     Void,
     Array(Rc<RefCell<Vec<Value>>>),
+    Dict(Rc<RefCell<HashMap<String, Value>>>),
     Closure {
         /// 前面的是is_mut，后面是参数名称
         params: Vec<(bool, String)>,
@@ -84,6 +85,19 @@ impl std::fmt::Display for Value {
                 write!(f, " }}")
             }
             Value::NativeFunction(native_func) => write!(f, "{:?}", native_func),
+            Value::Dict(dict) => {
+                write!(f, "{{ ")?;
+                let map = dict.borrow();
+                let mut first = true;
+                for (k, v) in map.iter() {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "\"{}\": {}", k, v)?;
+                    first = false;
+                }
+                write!(f, " }}")
+            }
         }
     }
 }
@@ -282,31 +296,56 @@ impl Interpreter {
                 }
                 Ok(Value::Array(Rc::new(RefCell::new(arr))))
             }
+            Expr::Dict(entries) => {
+                let mut map = HashMap::new();
+
+                for (k, v_expr) in entries {
+                    let val = self.eval_expr(v_expr)?;
+                    map.insert(k.clone(), val);
+                }
+                Ok(Value::Dict(Rc::new(RefCell::new(map))))
+            }
             Expr::Index { target, index } => {
                 let target_val = self.eval_expr(target)?;
                 let index_val = self.eval_expr(index)?;
 
-                if let Value::Number(n) = index_val {
-                    if n < 0.0 || n.fract() != 0.0 {
-                        return Err("数组索引必须是正整数".to_string());
-                    }
-                    let idx = n as usize;
+                match target_val {
+                    Value::Array(arr) => {
+                        if let Value::Number(n) = index_val {
+                            if n < 0.0 || n.fract() != 0.0 {
+                                return Err("数组索引必须是正整数".to_string());
+                            }
+                            let idx = n as usize;
+                            let arr_ref = arr.borrow();
 
-                    if let Value::Array(arr) = target_val {
-                        let arr_ref = arr.borrow();
-                        if idx >= arr_ref.len() {
-                            return Err(format!(
-                                "索引越界：数组长度为 {}，但尝试访问 {}",
-                                arr_ref.len(),
-                                idx
-                            ));
+                            if idx >= arr_ref.len() {
+                                return Err(format!(
+                                    "索引越界：数组长度为 {}，但尝试访问 {}",
+                                    arr_ref.len(),
+                                    idx
+                                ));
+                            }
+                            Ok(arr_ref[idx].clone())
+                        } else {
+                            Err("数组的索引必须是数字".to_string())
                         }
-                        Ok(arr_ref[idx].clone())
-                    } else {
-                        Err("试图对非数组进行索引访问".to_string())
                     }
-                } else {
-                    Err("数组索引必须是数字".to_string())
+
+                    Value::Dict(dict) => {
+                        if let Value::String(k) = index_val {
+                            let map = dict.borrow();
+
+                            if let Some(v) = map.get(&k) {
+                                Ok(v.clone())
+                            } else {
+                                Err(format!("字典中不存在键: '{}'", k))
+                            }
+                        } else {
+                            Err("字典的索引(Key)必须是字符串".to_string())
+                        }
+                    }
+
+                    _ => Err("试图对非数组或字典进行索引访问".to_string()),
                 }
             }
             Expr::Call { target, args } => {
@@ -635,51 +674,106 @@ impl Interpreter {
 
                 if let Some(idx_expr) = index {
                     let idx_val = self.eval_expr(idx_expr).map_err(attach_span)?;
-                    let idx = if let Value::Number(n) = idx_val {
-                        if n < 0.0 || n.fract() != 0.0 {
-                            return Err(("数组索引必须是正整数".into(), stmt.span.clone()));
-                        }
-                        n as usize
-                    } else {
-                        return Err(("数组索引必须是数字".into(), stmt.span.clone()));
-                    };
 
-                    if let Value::Array(arr_rc) = current_val {
-                        let mut arr_ref = arr_rc.borrow_mut();
-                        if idx >= arr_ref.len() {
-                            return Err((
-                                format!("索引越界：长度 {}, 访问 {}", arr_ref.len(), idx),
-                                stmt.span.clone(),
-                            ));
-                        }
-
-                        let elem_val = arr_ref[idx].clone();
-                        let new_val = match (elem_val, op.as_str(), right_val) {
-                            (_, "=", v) => v,
-                            (Value::String(l), "++=", Value::String(r)) => {
-                                Value::String(format!("{}{}", l, r))
-                            }
-                            (Value::Number(l), "+=", Value::Number(r)) => Value::Number(l + r),
-                            (Value::Number(l), "-=", Value::Number(r)) => Value::Number(l - r),
-                            (Value::Number(l), "*=", Value::Number(r)) => Value::Number(l * r),
-                            (Value::Number(l), "/=", Value::Number(r)) => {
-                                if r == 0.0 {
-                                    return Err(("除数不能为0".to_string(), stmt.span.clone()));
+                    match current_val {
+                        Value::Array(arr_rc) => {
+                            let idx = if let Value::Number(n) = idx_val {
+                                if n < 0.0 || n.fract() != 0.0 {
+                                    return Err(("数组索引必须是正整数".into(), stmt.span.clone()));
                                 }
-                                Value::Number(l / r)
-                            }
-                            _ => {
+                                n as usize
+                            } else {
+                                return Err(("数组索引必须是数字".into(), stmt.span.clone()));
+                            };
+
+                            let mut arr_ref = arr_rc.borrow_mut();
+                            if idx >= arr_ref.len() {
                                 return Err((
-                                    "无效的赋值操作或类型不匹配".to_string(),
+                                    format!("索引越界：长度 {}, 访问 {}", arr_ref.len(), idx),
                                     stmt.span.clone(),
                                 ));
                             }
-                        };
 
-                        arr_ref[idx] = new_val;
-                        return Ok(ControlFlow::None);
-                    } else {
-                        return Err(("不能对非数组进行索引赋值".into(), stmt.span.clone()));
+                            let elem_val = arr_ref[idx].clone();
+                            let new_val = match (elem_val, op.as_str(), right_val) {
+                                (_, "=", v) => v,
+                                (Value::String(l), "++=", Value::String(r)) => {
+                                    Value::String(format!("{}{}", l, r))
+                                }
+                                (Value::Number(l), "+=", Value::Number(r)) => Value::Number(l + r),
+                                (Value::Number(l), "-=", Value::Number(r)) => Value::Number(l - r),
+                                (Value::Number(l), "*=", Value::Number(r)) => Value::Number(l * r),
+                                (Value::Number(l), "/=", Value::Number(r)) => {
+                                    if r == 0.0 {
+                                        return Err(("除数不能为0".to_string(), stmt.span.clone()));
+                                    }
+                                    Value::Number(l / r)
+                                }
+                                _ => {
+                                    return Err((
+                                        "无效的赋值操作或类型不匹配".to_string(),
+                                        stmt.span.clone(),
+                                    ));
+                                }
+                            };
+
+                            arr_ref[idx] = new_val;
+                            return Ok(ControlFlow::None);
+                        }
+
+                        Value::Dict(dict_rc) => {
+                            if let Value::String(k) = idx_val {
+                                let mut map = dict_rc.borrow_mut();
+
+                                let elem_val = map.get(&k).cloned().unwrap_or(Value::Number(0.0));
+
+                                let new_val = match (elem_val, op.as_str(), right_val) {
+                                    (_, "=", v) => v,
+                                    (Value::String(l), "++=", Value::String(r)) => {
+                                        Value::String(format!("{}{}", l, r))
+                                    }
+                                    (Value::Number(l), "+=", Value::Number(r)) => {
+                                        Value::Number(l + r)
+                                    }
+                                    (Value::Number(l), "-=", Value::Number(r)) => {
+                                        Value::Number(l - r)
+                                    }
+                                    (Value::Number(l), "*=", Value::Number(r)) => {
+                                        Value::Number(l * r)
+                                    }
+                                    (Value::Number(l), "/=", Value::Number(r)) => {
+                                        if r == 0.0 {
+                                            return Err((
+                                                "除数不能为0".to_string(),
+                                                stmt.span.clone(),
+                                            ));
+                                        }
+                                        Value::Number(l / r)
+                                    }
+                                    _ => {
+                                        return Err((
+                                            "字典赋值操作的类型不匹配".to_string(),
+                                            stmt.span.clone(),
+                                        ));
+                                    }
+                                };
+
+                                map.insert(k, new_val);
+                                return Ok(ControlFlow::None);
+                            } else {
+                                return Err((
+                                    "字典的索引(Key)必须是字符串".into(),
+                                    stmt.span.clone(),
+                                ));
+                            }
+                        }
+
+                        _ => {
+                            return Err((
+                                "不能对非数组或字典进行索引赋值".into(),
+                                stmt.span.clone(),
+                            ));
+                        }
                     }
                 }
 
@@ -776,7 +870,7 @@ impl Interpreter {
                     };
 
                     if !is_true {
-                        break; // 结束循环
+                        break;
                     }
 
                     self.env.push_scope();
@@ -810,36 +904,40 @@ impl Interpreter {
             } => {
                 let iter_val = self.eval_expr(iterable).map_err(attach_span)?;
 
-                if let Value::Array(arr) = iter_val {
-                    let elements = arr.borrow().clone();
+                let elements: Vec<Value> = match iter_val {
+                    Value::Array(arr) => arr.borrow().clone(),
+                    Value::Dict(dict) => dict
+                        .borrow()
+                        .keys()
+                        .map(|k| Value::String(k.clone()))
+                        .collect(),
+                    _ => return Err(("for 循环只能遍历数组或字典".to_string(), stmt.span.clone())),
+                };
 
-                    for elem in elements {
-                        self.env.push_scope();
-                        self.env.define(item_name.clone(), elem, false);
+                for elem in elements {
+                    self.env.push_scope();
+                    self.env.define(item_name.clone(), elem, false);
 
-                        let mut flow = ControlFlow::None;
-                        for s in body {
-                            flow = self.eval_stmt(s)?;
-                            match flow {
-                                ControlFlow::Return(_) => break,
-                                ControlFlow::Break => break,
-                                ControlFlow::Continue => break,
-                                ControlFlow::None => {}
-                            }
-                        }
-                        self.env.pop_scope();
-
+                    let mut flow = ControlFlow::None;
+                    for s in body {
+                        flow = self.eval_stmt(s)?;
                         match flow {
-                            ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
+                            ControlFlow::Return(_) => break,
                             ControlFlow::Break => break,
-                            ControlFlow::Continue => continue,
+                            ControlFlow::Continue => break,
                             ControlFlow::None => {}
                         }
                     }
-                    Ok(ControlFlow::None)
-                } else {
-                    Err(("for 循环只能遍历数组".to_string(), stmt.span.clone()))
+                    self.env.pop_scope();
+
+                    match flow {
+                        ControlFlow::Return(v) => return Ok(ControlFlow::Return(v)),
+                        ControlFlow::Break => break,
+                        ControlFlow::Continue => continue,
+                        ControlFlow::None => {}
+                    }
                 }
+                Ok(ControlFlow::None)
             }
             Stmt::Break => Ok(ControlFlow::Break),
             Stmt::Continue => Ok(ControlFlow::Continue),

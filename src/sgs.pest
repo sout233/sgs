@@ -15,11 +15,12 @@ semicolon     =  { ";" }
 
 type_name = {
     ("func" ~ "(" ~ (type_name ~ ("," ~ type_name)*)? ~ ")" ~ "->" ~ type_name)
+  | ("dict" ~ "<" ~ type_name ~ ">")
   | ident
 }
 
 struct_field_def = { ident ~ ":" ~ type_name }
-struct_def = { "struct" ~ ident ~ "{" ~ (struct_field_def ~ ("," ~ struct_field_def)* ~ ","?)? ~ "}" }
+struct_def       = { "struct" ~ ident ~ "{" ~ (struct_field_def ~ ("," ~ struct_field_def)* ~ ","?)? ~ "}" }
 
 stmt = { annotation | mount_stmt | param_stmt | require_stmt | extern_fn_stmt | fn_stmt | struct_def }
 
@@ -30,7 +31,7 @@ require_stmt = { "require" ~ is_mut? ~ ident ~ semicolon }
 
 is_mut = { "mut" }
 
-fn_param = { is_mut? ~ ident ~ ":" ~ type_name }
+fn_param  = { is_mut? ~ ident ~ ":" ~ type_name }
 fn_params = { (fn_param ~ ("," ~ fn_param)*)? }
 
 fn_stmt   = { "fn" ~ ident ~ "(" ~ fn_params ~ ")" ~ return_ty? ~ block }
@@ -59,10 +60,13 @@ if_stmt = { "if" ~ expr ~ block ~ ("else" ~ (if_stmt | block))? }
 let_stmt    = { "let" ~ is_mut? ~ ident ~ "=" ~ expr ~ semicolon }
 assign_stmt = { path ~ ("[" ~ expr ~ "]")? ~ assign_op ~ expr ~ semicolon }
 expr_stmt   = { expr ~ semicolon }
-assign_op = { "++=" | "+=" | "-=" | "*=" | "/=" | "=" }
+assign_op   = { "++=" | "+=" | "-=" | "*=" | "/=" | "=" }
 
 array_lit    = { "[" ~ (expr ~ ("," ~ expr)*)? ~ "]" }
 index_access = { path ~ "[" ~ expr ~ "]" }
+
+dict_entry = { (string_lit | ident) ~ ":" ~ expr }
+dict_lit   = { "{" ~ (dict_entry ~ ("," ~ dict_entry)* ~ ","?)? ~ "}" }
 
 path = { ident ~ ("." ~ ident)* }
 
@@ -78,13 +82,13 @@ math_expr = { term ~ (add_op ~ term)* }
 term      = { factor ~ (mul_op ~ factor)* }
 
 struct_field_init = { ident ~ ":" ~ expr }
-struct_init = { ident ~ "{" ~ (struct_field_init ~ ("," ~ struct_field_init)* ~ ","?)? ~ "}" }
+struct_init       = { ident ~ "{" ~ (struct_field_init ~ ("," ~ struct_field_init)* ~ ","?)? ~ "}" }
 
-factor_base = _{ closure | call | struct_init | index_access | array_lit | interp_string | string_lit | bool_lit | number | path | "(" ~ expr ~ ")" }
-factor = { factor_base ~ ("as" ~ type_name)* }
+factor_base = _{ closure | call | struct_init | dict_lit | index_access | array_lit | interp_string | string_lit | bool_lit | number | path | "(" ~ expr ~ ")" }
+factor      =  { factor_base ~ ("as" ~ type_name)* }
 
 comp_op = { "==" | "!=" | "<=" | ">=" | "<" | ">" }
-add_op = { "++" | "+" | "-" }
+add_op  = { "++" | "+" | "-" }
 mul_op  = { "*" | "/" }
 
 closure = { "|" ~ fn_params ~ "|" ~ block }

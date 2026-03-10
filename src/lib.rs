@@ -493,6 +493,21 @@ fn parse_factor(pair: pest::iterators::Pair<Rule>) -> Expr {
 
             Expr::StructInit { name, fields }
         }
+        Rule::dict_lit => {
+            let mut entries = Vec::new();
+            for entry_pair in base_inner.into_inner() {
+                let mut parts = entry_pair.into_inner();
+                let key_pair = parts.next().unwrap();
+                let key = match key_pair.as_rule() {
+                    Rule::ident => key_pair.as_str().to_string(),
+                    Rule::string_lit => key_pair.into_inner().next().unwrap().as_str().to_string(),
+                    _ => unreachable!(),
+                };
+                let value = parse_expr(parts.next().unwrap());
+                entries.push((key, Box::new(value)));
+            }
+            Expr::Dict(entries)
+        }
         _ => unreachable!("parse_factor 爆了: {:?}", base_inner.as_rule()),
     };
 

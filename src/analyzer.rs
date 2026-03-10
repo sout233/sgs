@@ -12,6 +12,7 @@ pub enum Type {
     Bool,
     Function { params: Vec<Type>, ret: Box<Type> },
     Array(Box<Type>),
+    Dict(Box<Type>),
     Struct(String),
     Unknown,
     Any,
@@ -19,6 +20,11 @@ pub enum Type {
 
 impl Type {
     pub fn from_name(s: &str) -> Self {
+        let s = s.trim();
+        if s.starts_with("dict<") && s.ends_with(">") {
+            let inner = &s[5..s.len() - 1];
+            return Type::Dict(Box::new(Type::from_name(inner)));
+        }
         match s {
             "number" | "float" => Type::Number,
             "string" => Type::String,
@@ -37,6 +43,7 @@ impl std::fmt::Display for Type {
             Type::Void => write!(f, "void"),
             Type::Bool => write!(f, "bool"),
             Type::Array(inner) => write!(f, "{}[]", inner),
+            Type::Dict(inner) => write!(f, "dict<{}>", inner),
             Type::Unknown => write!(f, "unknown"),
             Type::Any => write!(f, "any"),
             Type::Struct(name) => write!(f, "{}", name),
@@ -333,25 +340,41 @@ impl Analyzer {
 
                         let actual_target_ty = if let Some(idx_expr) = index {
                             let idx_ty = self.infer_expr(idx_expr, span);
-                            if idx_ty != Type::Unknown && idx_ty != Type::Number {
-                                self.errors.push(StaticCheckError::new(
-                                    "索引错误",
-                                    "数组索引必须是 'number' 类型",
-                                    span.clone(),
-                                ));
-                            }
 
-                            if let Type::Array(inner) = &expected_ty {
-                                *inner.clone()
-                            } else {
-                                if expected_ty != Type::Unknown {
-                                    self.errors.push(StaticCheckError::new(
-                                        "类型错误",
-                                        format!("无法对非数组类型 '{}' 进行索引赋值", expected_ty),
-                                        span.clone(),
-                                    ));
+                            match &expected_ty {
+                                Type::Array(inner) => {
+                                    if idx_ty != Type::Unknown && idx_ty != Type::Number {
+                                        self.errors.push(StaticCheckError::new(
+                                            "索引错误",
+                                            "数组索引必须是 'number' 类型",
+                                            span.clone(),
+                                        ));
+                                    }
+                                    *inner.clone()
                                 }
-                                Type::Unknown
+                                Type::Dict(inner) => {
+                                    if idx_ty != Type::Unknown && idx_ty != Type::String {
+                                        self.errors.push(StaticCheckError::new(
+                                            "索引错误",
+                                            "字典的索引(Key)必须是 'string' 类型",
+                                            span.clone(),
+                                        ));
+                                    }
+                                    *inner.clone()
+                                }
+                                _ => {
+                                    if expected_ty != Type::Unknown {
+                                        self.errors.push(StaticCheckError::new(
+                                            "类型错误",
+                                            format!(
+                                                "无法对非数组或字典类型 '{}' 进行索引赋值",
+                                                expected_ty
+                                            ),
+                                            span.clone(),
+                                        ));
+                                    }
+                                    Type::Unknown
+                                }
                             }
                         } else {
                             expected_ty.clone()
@@ -603,29 +626,62 @@ impl Analyzer {
                 }
                 Type::Array(Box::new(first_ty))
             }
+            Expr::Dict(entries) => {
+                if entries.is_empty() {
+                    return Type::Dict(Box::new(Type::Any));
+                }
+                let mut first_ty = Type::Unknown;
+                for (i, (_, val_expr)) in entries.iter().enumerate() {
+                    let ty = self.infer_expr(val_expr, fallback_span);
+                    if i == 0 {
+                        first_ty = ty;
+                    } else if ty != Type::Unknown && ty != first_ty {
+                        self.errors.push(StaticCheckError::new(
+                            "字典类型不一致",
+                            format!(
+                                "字典的值类型必须统一，应当为 '{}'，但此处是 '{}'",
+                                first_ty, ty
+                            ),
+                            fallback_span.clone(),
+                        ));
+                    }
+                }
+                Type::Dict(Box::new(first_ty))
+            }
             Expr::Index { target, index } => {
                 let target_ty = self.infer_expr(target, fallback_span);
                 let index_ty = self.infer_expr(index, fallback_span);
 
-                if index_ty != Type::Unknown && index_ty != Type::Number {
-                    self.errors.push(StaticCheckError::new(
-                        "索引错误",
-                        "数组的索引必须是 'number' 类型",
-                        fallback_span.clone(),
-                    ));
-                }
-
-                if let Type::Array(inner) = target_ty {
-                    *inner
-                } else if target_ty != Type::Unknown {
-                    self.errors.push(StaticCheckError::new(
-                        "类型错误",
-                        format!("只能对数组类型进行索引访问，但得到了 '{}'", target_ty),
-                        fallback_span.clone(),
-                    ));
-                    Type::Unknown
-                } else {
-                    Type::Unknown
+                match target_ty {
+                    Type::Array(inner) => {
+                        if index_ty != Type::Unknown && index_ty != Type::Number {
+                            self.errors.push(StaticCheckError::new(
+                                "索引错误",
+                                "数组的索引必须是 'number' 类型",
+                                fallback_span.clone(),
+                            ));
+                        }
+                        *inner
+                    }
+                    Type::Dict(inner) => {
+                        if index_ty != Type::Unknown && index_ty != Type::String {
+                            self.errors.push(StaticCheckError::new(
+                                "索引错误",
+                                "字典的键(Key)必须是 'string' 类型",
+                                fallback_span.clone(),
+                            ));
+                        }
+                        *inner
+                    }
+                    _ if target_ty != Type::Unknown => {
+                        self.errors.push(StaticCheckError::new(
+                            "类型错误",
+                            format!("只能对数组或字典类型进行索引访问，但得到了 '{}'", target_ty),
+                            fallback_span.clone(),
+                        ));
+                        Type::Unknown
+                    }
+                    _ => Type::Unknown,
                 }
             }
             Expr::BinaryOp { left, op, right } => {
